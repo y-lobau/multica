@@ -78,6 +78,9 @@ describe("PluginCredentials", () => {
     await act(async () => reject(new Error(SECRET)));
     expect(await screen.findByRole("alert")).toHaveTextContent("previous bearer token may already have been replaced");
     expect(document.body.innerHTML).not.toContain(SECRET);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await waitFor(() => expect(client.getMutationCache().getAll()).toHaveLength(0));
   });
 
@@ -117,6 +120,31 @@ describe("PluginCredentials", () => {
     await act(async () => resolve(response));
     expect(document.body.innerHTML).not.toContain(SECRET);
     await waitFor(() => expect(client.getMutationCache().getAll()).toHaveLength(0));
+  });
+
+  it.each(["cancel", "escape", "outside"])("blocks %s dismissal and repeat rotation while pending", async (dismissal) => {
+    let resolve!: (value: typeof response) => void;
+    vi.mocked(api.rotatePluginToken).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const user = userEvent.setup();
+    render(<PluginCredentials wsId="ws-1" installationId="install-1" />, { wrapper: Wrapper });
+    await open(user); await issue(user);
+    const confirm = screen.getByRole("button", { name: "Issue / rotate bearer token" });
+    expect(confirm).toBeDisabled();
+    expect(confirm).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    if (dismissal === "cancel") await user.click(screen.getByRole("button", { name: "Cancel" }));
+    else if (dismissal === "escape") await user.keyboard("{Escape}");
+    else await user.click(document.querySelector('[data-slot="dialog-overlay"]')!);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.click(confirm);
+    expect(api.rotatePluginToken).toHaveBeenCalledTimes(1);
+    await act(async () => resolve(response));
+    expect(await screen.findByLabelText("Signing secret")).toHaveAttribute("type", "password");
+    await user.click(screen.getByRole("button", { name: "Close and clear" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await open(user);
+    expect(screen.queryByLabelText("Signing secret")).not.toBeInTheDocument();
+    expect(api.rotatePluginToken).toHaveBeenCalledTimes(1);
   });
 
   it("reports clipboard failure without exposing the value", async () => {

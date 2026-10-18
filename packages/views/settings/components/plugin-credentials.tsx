@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { useRotatePluginToken } from "@multica/core/plugins";
 import type { PluginTokenIssue } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
@@ -11,23 +12,39 @@ import {
 } from "@multica/ui/components/ui/dialog";
 import { useT } from "../../i18n";
 
-export function PluginCredentials({ wsId, installationId }: { wsId: string; installationId: string }) {
+export function PluginCredentials(props: { wsId: string; installationId: string }) {
+  return <CredentialDialog key={`${props.wsId}:${props.installationId}`} {...props} />;
+}
+
+function CredentialDialog({ wsId, installationId }: { wsId: string; installationId: string }) {
   const { t } = useT("settings");
   const [open, setOpen] = useState(false);
+  const pending = useRef(false);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(next, details) => {
+      if (!next && pending.current) {
+        details.cancel();
+        return;
+      }
+      setOpen(next);
+    }}>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
         {t(($) => $.plugins.credentials.open)}
       </DialogTrigger>
       {open ? (
-        <CredentialSession key={`${wsId}:${installationId}`} wsId={wsId} installationId={installationId} onClose={() => setOpen(false)} />
+        <CredentialSession
+          wsId={wsId}
+          installationId={installationId}
+          onPendingChange={(value) => { pending.current = value; }}
+          onClose={() => { if (!pending.current) setOpen(false); }}
+        />
       ) : null}
     </Dialog>
   );
 }
 
-function CredentialSession({ wsId, installationId, onClose }: {
-  wsId: string; installationId: string; onClose: () => void;
+function CredentialSession({ wsId, installationId, onClose, onPendingChange }: {
+  wsId: string; installationId: string; onClose: () => void; onPendingChange: (pending: boolean) => void;
 }) {
   const { t } = useT("settings");
   const [credentials, setCredentials] = useState<PluginTokenIssue | null>(null);
@@ -48,6 +65,7 @@ function CredentialSession({ wsId, installationId, onClose }: {
 
   const issue = async () => {
     if (mutation.isPending) return;
+    onPendingChange(true);
     setCredentials(null);
     setError(false);
     setCopyState(null);
@@ -57,6 +75,7 @@ function CredentialSession({ wsId, installationId, onClose }: {
       if (active.current) setError(true);
     } finally {
       reset();
+      onPendingChange(false);
     }
   };
 
@@ -96,10 +115,11 @@ function CredentialSession({ wsId, installationId, onClose }: {
           ? t(($) => $.plugins.credentials.copied) : t(($) => $.plugins.credentials.copy_failed)}</p> : null}
       </div>
       <DialogFooter>
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="outline" disabled={mutation.isPending} onClick={onClose}>
           {credentials ? t(($) => $.plugins.credentials.close) : t(($) => $.plugins.consent.cancel)}
         </Button>
         <Button variant="destructive" disabled={mutation.isPending} aria-busy={mutation.isPending} onClick={() => void issue()}>
+          {mutation.isPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
           {t(($) => $.plugins.credentials.confirm)}
         </Button>
       </DialogFooter>
