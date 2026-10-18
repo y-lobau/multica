@@ -427,6 +427,27 @@
     "admin_only": "소유자와 관리자만 변경할 수 있습니다"
   },
   "plugins": {
+    "credentials": {
+      "open": "인증 정보",
+      "title": "Plugin 인증 정보",
+      "consequence": "기존 베어러 토큰이 즉시 교체됩니다. 이를 사용하는 클라이언트를 업데이트하세요. 설치 서명 비밀키는 그대로 유지되며 토큰 교체로 폐기되지 않습니다.",
+      "installation_id": "설치 ID",
+      "copy_id": "설치 ID 복사",
+      "bearer": "베어러 토큰",
+      "signing_secret": "서명 비밀키",
+      "private_hint": "인증 정보를 비공개로 보관하세요. 창을 닫으면 표시가 지워집니다. Plugin 에 필요한 값만 안전한 저장소에 저장하세요.",
+      "no_signing_secret": "서버가 서명 비밀키를 반환하지 않았습니다. 후크 서명이 비활성화되었거나 이 서버 버전에서 지원되지 않을 수 있습니다. 베어러 토큰은 서명 비밀키가 아닙니다.",
+      "failed": "요청이 실패했거나 응답이 잘못되었습니다. 이전 토큰이 이미 교체되었을 수 있습니다. 다시 시도하기 전에 클라이언트를 확인하세요.",
+      "copied": "복사됨",
+      "copy_failed": "복사하지 못했습니다. 값을 선택하여 직접 복사하세요.",
+      "close": "닫고 지우기",
+      "confirm": "토큰 발급 / 교체",
+      "toggle_label": "{{label}} 표시 전환",
+      "copy_label": "{{label}} 복사",
+      "hide": "숨기기",
+      "reveal": "표시",
+      "copy": "복사"
+    },
     "title": "플러그인",
     "loading": "Plugins 불러오는 중",
     "load_failed": "Plugins를 불러올 수 없습니다",

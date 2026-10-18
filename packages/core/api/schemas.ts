@@ -215,13 +215,13 @@ export const PluginInvocationListSchema = z.object({
 }).loose();
 
 /**
- * Returned once, by the request that minted it. There is no read endpoint for
- * either value, so a client that discards this cannot recover it.
+ * Rotation issues a new bearer token; the installation signing secret is stable.
+ * Older backends may omit the signing secret.
  */
 export const PluginTokenIssueSchema = z.object({
-  token: z.string().default(""),
+  token: z.string().min(1),
   signing_secret: z.string().default(""),
-}).loose();
+});
 
 /**
  * Discovered tools for one `mcp`-transport hook.

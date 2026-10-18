@@ -39,6 +39,7 @@ import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { Switch } from "@multica/ui/components/ui/switch";
 import { mcpHooks, PluginHookActivity, PluginMCPApproval, PluginScheduleActivity } from "../../plugins";
+import { PluginCredentials } from "./plugin-credentials";
 import { useLocale, useT } from "../../i18n";
 import {
   SettingsCard,
@@ -624,6 +625,10 @@ function InstalledPlugin({
             </IconButton>
           </div>
         </div>
+
+        {canManage ? (
+          <PluginCredentials key={`${wsId}:${installation.id}`} wsId={wsId} installationId={installation.id} />
+        ) : null}
 
         <div className="space-y-2">
           <div className="text-caption font-medium">{t(($) => $.plugins.granted_scopes)}</div>

@@ -36,6 +36,7 @@ vi.mock("@tanstack/react-query", () => ({
 vi.mock("@multica/core/plugins", () => ({
   pluginInstallationsOptions: () => ({ queryKey: ["plugins", "installed"] }),
   pluginPackagesOptions: () => ({ queryKey: ["plugins", "packages"] }),
+  useRotatePluginToken: () => ({ mutateAsync: vi.fn(), isPending: false, reset: vi.fn() }),
   usePreviewPlugin: () => ({ mutateAsync: mockPreview, isPending: false }),
   useInstallPlugin: () => ({ mutateAsync: mockInstall, isPending: false }),
   useConfigurePlugin: () => ({ mutateAsync: mockConfigure, isPending: false }),
@@ -240,11 +241,19 @@ describe("PluginsTab", () => {
     await waitFor(() => expect(mockUninstall).toHaveBeenCalledWith("installation-1"));
   });
 
+  it.each(["owner", "admin"] as const)("exposes credentials for %s", (role) => {
+    data.role = role;
+    data.installed.plugins = [INSTALLATION];
+    render(<PluginsTab />, { wrapper: Wrapper });
+    expect(screen.getByRole("button", { name: "Credentials" })).toBeInTheDocument();
+  });
+
   it("blocks management for a non-admin member", () => {
     data.role = "member";
     data.installed.plugins = [INSTALLATION];
     render(<PluginsTab />, { wrapper: Wrapper });
 
+    expect(screen.queryByRole("button", { name: "Credentials" })).not.toBeInTheDocument();
     expect(screen.getByText("View only")).toBeInTheDocument();
     // The whole publish-and-install section is admin-only.
     expect(screen.queryByRole("button", { name: "Upload package" })).not.toBeInTheDocument();

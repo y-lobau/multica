@@ -3370,6 +3370,7 @@ export class ApiClient {
     });
     return parseWithFallback(raw, PluginTokenIssueSchema, { token: "", signing_secret: "" }, {
       endpoint: "POST /api/workspaces/{id}/plugins/{installationId}/token",
+      sensitive: true,
     });
   }
 

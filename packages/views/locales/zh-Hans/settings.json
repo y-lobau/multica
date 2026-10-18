@@ -427,6 +427,27 @@
     "admin_only": "只有所有者和管理员可以修改"
   },
   "plugins": {
+    "credentials": {
+      "open": "凭据",
+      "title": "Plugin 凭据",
+      "consequence": "现有 bearer token 会立即被替换。请更新使用它的客户端。安装的签名密钥保持不变；轮换 token 不会撤销此密钥。",
+      "installation_id": "安装 ID",
+      "copy_id": "复制安装 ID",
+      "bearer": "Bearer token",
+      "signing_secret": "签名密钥",
+      "private_hint": "请妥善保密。关闭此窗口会清除显示。仅将 Plugin 需要的值保存到私密凭据存储中。",
+      "no_signing_secret": "此后端未返回签名密钥。当前版本可能未启用或不支持 hook 签名。Bearer token 不是签名密钥。",
+      "failed": "请求失败或响应无效。旧 token 可能已被替换，请在重试前检查客户端。",
+      "copied": "已复制",
+      "copy_failed": "无法复制。请选择该值并手动复制。",
+      "close": "关闭并清除",
+      "confirm": "签发 / 轮换 token",
+      "toggle_label": "显示或隐藏 {{label}}",
+      "copy_label": "复制 {{label}}",
+      "hide": "隐藏",
+      "reveal": "显示",
+      "copy": "复制"
+    },
     "title": "插件",
     "loading": "正在加载 Plugins",
     "load_failed": "无法加载 Plugins",

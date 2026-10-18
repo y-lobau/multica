@@ -207,7 +207,7 @@ export interface PluginInvocation {
   created_at: string;
 }
 
-/** Both values are shown once, by the request that minted them. */
+/** Rotation replaces the bearer token and returns the stable installation signing secret. */
 export interface PluginTokenIssue {
   token: string;
   signing_secret: string;

@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import type { PluginConfigRequest, PluginInstallRequest, PluginPreviewRequest } from "../types";
+import type { PluginConfigRequest, PluginInstallRequest, PluginPreviewRequest, PluginTokenIssue } from "../types";
 import { pluginKeys } from "./queries";
 
 function useInvalidatePlugins(wsId: string) {
@@ -121,10 +121,21 @@ export function useInvokePluginHook() {
   });
 }
 
-export function useRotatePluginToken(wsId: string) {
+export function useRotatePluginToken(wsId: string, consume: (credentials: PluginTokenIssue) => void) {
   const invalidate = useInvalidatePlugins(wsId);
   return useMutation({
-    mutationFn: (installationId: string) => api.rotatePluginToken(wsId, installationId),
+    // Consume once without putting credentials in MutationCache.data (or errors).
+    gcTime: 0,
+    retry: false,
+    mutationFn: async (installationId: string) => {
+      try {
+        const credentials = await api.rotatePluginToken(wsId, installationId);
+        if (!credentials.token) throw new Error();
+        consume(credentials);
+      } catch {
+        throw new Error("Plugin credential request failed");
+      }
+    },
     onSettled: invalidate,
   });
 }

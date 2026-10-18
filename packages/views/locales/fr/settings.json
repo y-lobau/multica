@@ -430,6 +430,27 @@
     "admin_only": "Seuls les propriétaires et administrateurs peuvent modifier ceci"
   },
   "plugins": {
+    "credentials": {
+      "open": "Identifiants",
+      "title": "Identifiants du Plugin",
+      "consequence": "Cette action remplace immédiatement le jeton porteur existant. Mettez à jour les clients qui l’utilisent. Le secret de signature reste identique ; remplacer le jeton ne révoque pas ce secret.",
+      "installation_id": "ID d’installation",
+      "copy_id": "Copier l’ID d’installation",
+      "bearer": "Jeton porteur",
+      "signing_secret": "Secret de signature",
+      "private_hint": "Gardez ces identifiants privés. Fermer cette fenêtre efface cet affichage. Enregistrez uniquement les valeurs nécessaires dans un stockage privé.",
+      "no_signing_secret": "Ce serveur n’a pas renvoyé de secret de signature. La signature des hooks peut être désactivée ou indisponible dans cette version. Le jeton porteur n’est pas un secret de signature.",
+      "failed": "La demande a échoué ou la réponse est invalide. Le jeton précédent a peut-être déjà été remplacé. Vérifiez vos clients avant de réessayer.",
+      "copied": "Copié",
+      "copy_failed": "Copie impossible. Sélectionnez et copiez la valeur manuellement.",
+      "close": "Fermer et effacer",
+      "confirm": "Émettre / remplacer le jeton",
+      "toggle_label": "Afficher ou masquer {{label}}",
+      "copy_label": "Copier {{label}}",
+      "hide": "Masquer",
+      "reveal": "Afficher",
+      "copy": "Copier"
+    },
     "title": "Plugins",
     "loading": "Chargement des plugins",
     "load_failed": "Impossible de charger les plugins",

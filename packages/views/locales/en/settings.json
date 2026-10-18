@@ -430,6 +430,27 @@
     "admin_only": "Only owners and admins can change this"
   },
   "plugins": {
+    "credentials": {
+      "open": "Credentials",
+      "title": "Plugin credentials",
+      "consequence": "This replaces the existing bearer token immediately. Update any clients using it. The installation signing secret stays the same; rotating the bearer token does not revoke that secret.",
+      "installation_id": "Installation ID",
+      "copy_id": "Copy installation ID",
+      "bearer": "Bearer token",
+      "signing_secret": "Signing secret",
+      "private_hint": "Keep these credentials private. Closing this dialog clears this display. Save only what your plugin needs in a private credential store.",
+      "no_signing_secret": "This backend did not return a signing secret. Hook signing may be disabled or unavailable in this backend version. The bearer token is not a signing secret.",
+      "failed": "The credential request failed or returned an invalid response. The previous bearer token may already have been replaced. Check your clients before retrying.",
+      "copied": "Copied",
+      "copy_failed": "Copy failed. Select and copy the value manually.",
+      "close": "Close and clear",
+      "confirm": "Issue / rotate bearer token",
+      "toggle_label": "Show or hide {{label}}",
+      "copy_label": "Copy {{label}}",
+      "hide": "Hide",
+      "reveal": "Reveal",
+      "copy": "Copy"
+    },
     "title": "Plugins",
     "loading": "Loading Plugins",
     "load_failed": "Plugins couldn't be loaded",
