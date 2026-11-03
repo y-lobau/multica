@@ -6,14 +6,14 @@
 
 ## Source and local changes
 
-The integrated application source is commit `396aaea`, based on upstream
-`908456c60192907f3c7e65709e18846f08eea2f8`.
+The integrated application source is commit `1612acbb`, based on upstream
+`bcdf970c76c2e9f41960381a76a3a6d399fe700f` (version 0.8.0).
 
 | Component | Preserved source |
 | --- | --- |
 | Backend customizations | Baseline commit `f665175`: 34 files copied byte-for-byte from the saved 0.7.0 production source, including specifications and tests |
 | Plugin credentials UI | Original commits `7446056` and `fbbe1d5`, transferred as `f7dacf6` and `67225d3` |
-| Upstream integration | Merge `a069015`; retains upstream handler-less workflow spans and daemon compatibility |
+| Upstream integration | Merges `a069015` and `1612acbb`; retains upstream handler-less workflow spans and daemon compatibility |
 | Locale and icon integration | `42825a6` and `396aaea`: Traditional Chinese credentials and the upstream icon package |
 | Test isolation | `1e259a8`: task-claim cases use fresh per-test runtimes; production heartbeat admission remains unchanged |
 
@@ -24,11 +24,11 @@ No additional community PR has been selected for this deployment.
 
 ## Build and deployment
 
-The application images are `holas-multica-backend:selfhost-396aaea` and
-`holas-multica-web:selfhost-396aaea`. Exact image IDs, source and binary hashes,
+The application images are `holas-multica-backend:selfhost-1612acbb` and
+`holas-multica-web:selfhost-1612acbb`. Exact image IDs, source and binary hashes,
 check results, migration rehearsal and deployment status are recorded locally in:
 
-`/Volumes/ext/_service/multica/radio-reference/selfhost-transition-20261103/`
+`/Volumes/ext/_service/multica/radio-reference/selfhost-main-20261103/`
 
 The web image uses a host-compiled standalone output and Linux musl sharp from
 a frozen-lockfile Linux dependency install. The recorded build-only Next config
@@ -46,7 +46,7 @@ pre-upgrade backup directory. Never infer deployment from a branch or image tag.
 
 ## Regular upgrades
 
-1. Fetch `origin main`, then create an isolated candidate branch/worktree from
+1. Fetch `origin +refs/heads/main:refs/remotes/origin/main` explicitly (a release-tag-only refspec can leave `origin/main` stale), then create an isolated candidate branch/worktree from
    `selfhost` and merge `origin/main` there. Preserve merge history.
 2. For each selected community PR, record its URL, exact reviewed commit and merge
    commit here. Reconcile local patches when upstream adopts their behavior.
