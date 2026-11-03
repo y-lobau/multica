@@ -263,6 +263,54 @@ func (q *Queries) ListTaskMessages(ctx context.Context, taskID pgtype.UUID) ([]T
 	return items, nil
 }
 
+const listTaskMessagesPage = `-- name: ListTaskMessagesPage :many
+SELECT id, task_id, seq, type, tool, content, input, output, created_at, output_truncated, call_id FROM task_message
+WHERE task_id = $1 AND seq > $2
+ORDER BY seq ASC
+LIMIT $3
+`
+
+type ListTaskMessagesPageParams struct {
+	TaskID    pgtype.UUID `json:"task_id"`
+	AfterSeq  int32       `json:"after_seq"`
+	PageLimit int32       `json:"page_limit"`
+}
+
+// Bounded page of a run transcript for the Public API: callers resume with the
+// last seq they received, so a long run is read in pages instead of one
+// response the size of every tool output the run ever produced.
+func (q *Queries) ListTaskMessagesPage(ctx context.Context, arg ListTaskMessagesPageParams) ([]TaskMessage, error) {
+	rows, err := q.db.Query(ctx, listTaskMessagesPage, arg.TaskID, arg.AfterSeq, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskMessage{}
+	for rows.Next() {
+		var i TaskMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.Seq,
+			&i.Type,
+			&i.Tool,
+			&i.Content,
+			&i.Input,
+			&i.Output,
+			&i.CreatedAt,
+			&i.OutputTruncated,
+			&i.CallID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTaskMessagesSince = `-- name: ListTaskMessagesSince :many
 SELECT id, task_id, seq, type, tool, content, input, output, created_at, output_truncated, call_id FROM task_message
 WHERE task_id = $1 AND seq > $2

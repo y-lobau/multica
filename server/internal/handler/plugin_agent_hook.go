@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/multica-ai/multica/server/internal/service"
 )
 
 // The daemon's end of the agent trigger.
@@ -54,8 +55,11 @@ func (h *Handler) InvokeAgentPluginHook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// The run comes from the claimed task row, never from the request: the
+	// handler is told which run it serves by the host, not by the model.
 	result, err := h.PluginService.InvokeAgentHook(
-		r.Context(), uuidToString(installation.ID), req.HookKey, task.AgentID, req.Input)
+		r.Context(), uuidToString(installation.ID), req.HookKey, task.AgentID,
+		service.AgentHookRun{TaskID: task.ID, IssueID: task.IssueID}, req.Input)
 	if err != nil {
 		// 200 with an error body, deliberately.
 		//

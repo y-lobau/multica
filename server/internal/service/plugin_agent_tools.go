@@ -121,14 +121,24 @@ func (s *PluginService) AgentHookTools(ctx context.Context, workspaceID pgtype.U
 	return tools, nil
 }
 
-// InvokeAgentHook runs one agent-triggered hook.
+// AgentHookRun is the run an agent-trigger tool was called from. The daemon
+// endpoint knows it from the claimed task row; a handler must not have to take
+// it from tool input, which the model writes.
+type AgentHookRun struct {
+	TaskID  pgtype.UUID
+	IssueID pgtype.UUID
+}
+
+// InvokeAgentHook attaches the calling run to the signed invocation.
+// Writes are attributed to the agent that invoked the tool.
 //
-// The actor is the AGENT, not the person who filed the issue and not the
-// plugin: an agent chose to call this, so the writes it produces are the
-// agent's, exactly as they would be if the agent had written them directly.
-// author_type already has a value for that, which is why this trigger needs no
-// new one.
-func (s *PluginService) InvokeAgentHook(ctx context.Context, installationID, hookKey string, agentID pgtype.UUID, input json.RawMessage) (HookResult, error) {
+// The run travels as task_id / issue_id in the signed body, so a handler can
+// scope what it does to the run the agent is actually in. The callback grant
+// is narrowed to the run's task only: reads of that run's transcript are what
+// the new task endpoints serve, while issue reads stay exactly as wide as they
+// were for agent-trigger tools, so tools that act on another issue keep
+// working.
+func (s *PluginService) InvokeAgentHook(ctx context.Context, installationID, hookKey string, agentID pgtype.UUID, run AgentHookRun, input json.RawMessage) (HookResult, error) {
 	caller, err := s.AuthorizePluginAction(ctx, installationID, pgtype.UUID{}, "")
 	if err != nil {
 		return HookResult{}, err
@@ -142,7 +152,9 @@ func (s *PluginService) InvokeAgentHook(ctx context.Context, installationID, hoo
 		Hook:         hook,
 		Trigger:      plugincontract.TriggerAgent,
 		Actor:        HookActor{Type: "agent", ID: agentID},
+		TaskID:       run.TaskID,
 		Input:        rawInputOrNil(input),
+		RunIssueID:   run.IssueID,
 	}, 1)
 }
 

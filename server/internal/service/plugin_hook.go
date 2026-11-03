@@ -102,7 +102,17 @@ type HookInvocation struct {
 	// callback token so a handler answering about one issue cannot use the same
 	// grant to reach across the workspace.
 	IssueID pgtype.UUID
-	Input   any
+	// TaskID is the agent run this call is about: the task an event reports on,
+	// or the task whose agent picked an agent-trigger tool. It is sent so a
+	// handler knows which run it is answering for without trusting client
+	// input, and it narrows the callback grant's task reads to that one run.
+	TaskID pgtype.UUID
+	// RunIssueID is the issue of the run an agent-trigger tool was called from.
+	// It is reported to the handler as issue_id but, unlike IssueID, does not
+	// narrow the callback grant: agent tools have always been able to act on
+	// other issues the installation can see, and they still can.
+	RunIssueID pgtype.UUID
+	Input      any
 	// DeliveryID is stable across retries of the same scheduled occurrence.
 	// PlannedAt is the canonical UTC cron occurrence, not delivery wall time.
 	DeliveryID string
@@ -128,9 +138,13 @@ type hookRequestBody struct {
 	// by the host. Sent because the alternative is every handler reading it out
 	// of client-supplied `input` — unvalidated, and absent entirely for the event
 	// trigger, where no client was involved at all.
-	IssueID string           `json:"issue_id,omitempty"`
-	Actor   hookRequestActor `json:"actor"`
-	Input   json.RawMessage  `json:"input,omitempty"`
+	IssueID string `json:"issue_id,omitempty"`
+	// TaskID is the agent run this call is about, resolved by the host: the
+	// task an event reports on, or the run whose agent called an agent-trigger
+	// tool. Absent when the call is not about a run.
+	TaskID string           `json:"task_id,omitempty"`
+	Actor  hookRequestActor `json:"actor"`
+	Input  json.RawMessage  `json:"input,omitempty"`
 	// Config is the installation's non-secret configuration, the values an
 	// administrator typed into the host-rendered form. Sent because the handler
 	// has no other way to read them — the Action API deliberately has no config
@@ -403,6 +417,11 @@ func (s *PluginService) buildHookBody(ctx context.Context, invocation HookInvoca
 	}
 	if invocation.IssueID.Valid {
 		body.IssueID = uuidString(invocation.IssueID)
+	} else if invocation.RunIssueID.Valid {
+		body.IssueID = uuidString(invocation.RunIssueID)
+	}
+	if invocation.TaskID.Valid {
+		body.TaskID = uuidString(invocation.TaskID)
 	}
 	body.Config = nonSecretConfig(invocation.Installation)
 	if invocation.Input != nil {

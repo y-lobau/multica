@@ -98,3 +98,12 @@ ORDER BY seq ASC;
 -- name: DeleteTaskMessages :exec
 DELETE FROM task_message
 WHERE task_id = $1;
+
+-- name: ListTaskMessagesPage :many
+-- Bounded page of a run transcript for the Public API: callers resume with the
+-- last seq they received, so a long run is read in pages instead of one
+-- response the size of every tool output the run ever produced.
+SELECT * FROM task_message
+WHERE task_id = sqlc.arg('task_id') AND seq > sqlc.arg('after_seq')
+ORDER BY seq ASC
+LIMIT sqlc.arg('page_limit');

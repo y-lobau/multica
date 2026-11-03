@@ -161,6 +161,7 @@ func (h *Handler) pluginTokenCaller(w http.ResponseWriter, r *http.Request, toke
 	actor := pluginActor{Type: "plugin"}
 	var memberUserID pgtype.UUID
 	var issueScope pgtype.UUID
+	var taskScope pgtype.UUID
 
 	switch {
 	case strings.HasPrefix(token, "mpc_"):
@@ -175,6 +176,7 @@ func (h *Handler) pluginTokenCaller(w http.ResponseWriter, r *http.Request, toke
 		}
 		installationID = grant.InstallationID
 		issueScope = grant.IssueID
+		taskScope = grant.TaskID
 		if grant.Actor.Type == "member" {
 			memberUserID = grant.Actor.ID
 		}
@@ -196,6 +198,7 @@ func (h *Handler) pluginTokenCaller(w http.ResponseWriter, r *http.Request, toke
 	// The grant said which issue it was about. Carrying it here is what turns
 	// that from a comment into a check — see pluginIssueForUser.
 	caller.IssueScope = issueScope
+	caller.TaskScope = taskScope
 
 	// A callback token that stands for a person is only as good as that
 	// person's membership TODAY. Re-checking here means revoking someone's

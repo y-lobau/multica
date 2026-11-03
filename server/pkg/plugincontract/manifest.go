@@ -106,6 +106,12 @@ const (
 	ScopeNetPrefix = "net:"
 )
 
+// ScopeChatsRead is the consent to read what a member said to an agent in a
+// direct chat. Chat runs are tasks, but their input is a private conversation
+// rather than workspace issue content, so tasks:read alone never reveals it: a
+// plugin must be granted this scope as well.
+const ScopeChatsRead = "chats:read"
+
 // Product events an `event`-triggered hook may subscribe to.
 const (
 	EventIssueCreated       = eventcontract.EventIssueCreated
@@ -124,6 +130,7 @@ var fixedScopes = map[string]bool{
 	ScopeCommentsWrite:    true,
 	ScopeTasksRead:        true,
 	ScopeTasksWrite:       true,
+	ScopeChatsRead:        true,
 	ScopeAgentsRead:       true,
 	ScopeMembersRead:      true,
 	ScopeStorageUser:      true,

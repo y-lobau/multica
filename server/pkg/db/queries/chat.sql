@@ -1729,3 +1729,11 @@ WHERE workspace_id = $1
   AND status = 'active'
 ORDER BY created_at ASC
 LIMIT 1;
+
+-- name: ListUserChatMessagesByTask :many
+-- The member-typed input a chat task was created to answer. Rows are bound to
+-- their task by LinkChatMessageToTask, so this is exactly the turn's input and
+-- never an earlier or later turn of the same session.
+SELECT * FROM chat_message
+WHERE task_id = $1 AND role = 'user'
+ORDER BY created_at ASC, id ASC;

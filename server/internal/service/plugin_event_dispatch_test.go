@@ -317,3 +317,26 @@ func TestTheIssueIDIsStillFoundOnTheWorker(t *testing.T) {
 		t.Fatalf("issue id = %q, want %q", uuidString(found), issueID)
 	}
 }
+
+// Task events narrow the callback grant to the run they report on; nothing
+// else carries a top-level task_id, and must not be narrowed by accident.
+func TestTaskIDFromPayloadOnlyReadsTheRunItReportsOn(t *testing.T) {
+	const task = "0f8fad5b-d9cb-469f-a165-70867728950e"
+	if got := taskIDFromPayload(map[string]any{"task_id": task, "issue_id": "", "status": "completed"}); uuidString(got) != task {
+		t.Fatalf("task event payload: got %q, want %q", uuidString(got), task)
+	}
+	if got := taskIDFromPayload(map[string]any{"comment": map[string]any{"id": task, "source_task_id": task}}); got.Valid {
+		t.Fatal("a comment payload must not narrow the grant to a run")
+	}
+	if got := taskIDFromPayload(map[string]any{"task_id": "not-a-uuid"}); got.Valid {
+		t.Fatal("a malformed task_id must be ignored")
+	}
+	for event, want := range map[string]bool{
+		"task.completed": true, "task.failed": true, "task.started": true,
+		"comment.created": false, "issue.updated": false,
+	} {
+		if isTaskEvent(event) != want {
+			t.Fatalf("isTaskEvent(%q) = %v, want %v", event, !want, want)
+		}
+	}
+}

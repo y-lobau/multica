@@ -47,9 +47,15 @@ endpoint-specific concurrency rules.
 
 ## Rollout ledger
 
-The migrated slice is Issue read/content update and Comment read/create. Context
+The migrated slice is Issue read/content update, Comment read/create, and Task
+(agent run) read: `GET /tasks/{task_id}` for the run and the input that started
+it, and `GET /tasks/{task_id}/messages` for its transcript, cursor-paginated.
+Task reads need `tasks:read`; a chat run's input and transcript additionally
+need `chats:read`. Comment input and its trigger summary require `comments:read`;
+chat trigger summaries require `chats:read`. A callback token issued about one run (a task event, or an
+agent-trigger tool called from inside a run) reads only that run. Context
 and Storage remain Plugin extensions; Hook and invocation delivery remain on
 the bridge. Projects, Members, Issue search/create/transition, Agents, Squads,
-Skills, Tasks/Runs, and Autopilots are subsequent vertical slices. Each slice
+Skills, Task writes, and Autopilots are subsequent vertical slices. Each slice
 adds its Public contract first, then explicitly opts the safe Plugin subset into
 the capability ledger.

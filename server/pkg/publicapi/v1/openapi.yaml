@@ -165,6 +165,59 @@ paths:
           description: Deleted
         default:
           $ref: "#/components/responses/Problem"
+  /tasks/{task_id}:
+    parameters:
+      - $ref: "#/components/parameters/TaskID"
+    get:
+      operationId: getTask
+      summary: Get an agent run and the input that started it
+      description: >-
+        A callback token issued about one run (a task event, or an agent tool
+        called from inside a run) reads only that run; one issued about an
+        issue reads only that issue's runs. Chat input additionally requires
+        chats:read and is omitted without it. Trigger summaries follow the
+        source input's scope: comments:read for comments and chats:read for chats.
+      x-multica-contract: shared_resource
+      x-multica-scope: tasks:read
+      responses:
+        "200":
+          description: Task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        default:
+          $ref: "#/components/responses/Problem"
+  /tasks/{task_id}/messages:
+    parameters:
+      - $ref: "#/components/parameters/TaskID"
+    get:
+      operationId: listTaskMessages
+      summary: List a run transcript in seq order, one page at a time
+      description: >-
+        Chat runs additionally require chats:read. Long text fields are cut at
+        32 KiB and flagged truncated.
+      x-multica-contract: shared_resource
+      x-multica-scope: tasks:read
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque next_cursor from the previous page of this run
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, format: int32, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Transcript page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskMessageListResponse"
+        default:
+          $ref: "#/components/responses/Problem"
 components:
   securitySchemes:
     pluginBearer:
@@ -177,6 +230,13 @@ components:
       in: path
       required: true
       description: Issue UUID or workspace identifier such as MUL-123
+      schema:
+        type: string
+    TaskID:
+      name: task_id
+      in: path
+      required: true
+      description: Agent run (task) UUID
       schema:
         type: string
     StorageScope:
@@ -406,3 +466,99 @@ components:
       required: [value]
       properties:
         value: { type: string, maxLength: 102400 }
+    Task:
+      type: object
+      required:
+        - id
+        - workspace_id
+        - agent_id
+        - kind
+        - status
+        - issue_id
+        - chat_session_id
+        - chat_user_id
+        - autopilot_id
+        - autopilot_run_id
+        - originator_user_id
+        - trigger_comment_id
+        - trigger_summary
+        - delegated_from_task_id
+        - delegated_from_agent_id
+        - retry_of_task_id
+        - attempt
+        - max_attempts
+        - failure_reason
+        - input
+        - created_at
+        - started_at
+        - completed_at
+      properties:
+        id: { type: string }
+        workspace_id: { type: string }
+        agent_id: { type: string }
+        kind:
+          type: string
+          enum: [issue, chat, autopilot, quick_create, other]
+        status: { type: string }
+        issue_id: { type: [string, "null"] }
+        chat_session_id: { type: [string, "null"] }
+        chat_user_id: { type: [string, "null"] }
+        autopilot_id: { type: [string, "null"] }
+        autopilot_run_id: { type: [string, "null"] }
+        originator_user_id: { type: [string, "null"] }
+        trigger_comment_id: { type: [string, "null"] }
+        trigger_summary: { type: [string, "null"] }
+        delegated_from_task_id: { type: [string, "null"] }
+        delegated_from_agent_id: { type: [string, "null"] }
+        retry_of_task_id: { type: [string, "null"] }
+        attempt: { type: integer, format: int32 }
+        max_attempts: { type: integer, format: int32 }
+        failure_reason: { type: [string, "null"] }
+        input:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskInput"
+        created_at: { type: string, format: date-time }
+        started_at: { type: [string, "null"], format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+    TaskInput:
+      type: object
+      required: [source, content]
+      properties:
+        source:
+          type: string
+          enum: [chat_message, comment, quick_create, handoff]
+        author_type: { type: string, enum: [member, agent, plugin, system] }
+        author_id: { type: string }
+        content: { type: string }
+        truncated: { type: boolean }
+        created_at: { type: string, format: date-time }
+    TaskMessage:
+      type: object
+      required: [seq, type, created_at]
+      properties:
+        seq: { type: integer, format: int32 }
+        type: { type: string }
+        tool: { type: string }
+        call_id: { type: string }
+        content: { type: string }
+        input: { type: object, additionalProperties: true }
+        output: { type: string }
+        output_truncated:
+          type: boolean
+          description: Whether the recorded tool output was already cut when the daemon reported it; omitted when unknown.
+        truncated:
+          type: boolean
+          description: Whether this response cut content or output at 32 KiB.
+        created_at: { type: string, format: date-time }
+    TaskMessageListResponse:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskMessage"
+        next_cursor:
+          type: string
+          description: Present when more messages follow; pass it as cursor.

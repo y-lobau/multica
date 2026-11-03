@@ -20,6 +20,12 @@ An issue is Multica's basic unit for organizing work: a feature, a bug, an inves
 
 ![Issue detail: description, discussion, properties on the right, and the execution log](/images/docs/quickstart-run-result.webp)
 
+## Review handoffs with saved results
+
+When a project workflow assigns a reviewer on entry to a status, one issue update can save the result in the description and enter that status. The saved issue must use the workflow-selected reviewer, and the resulting run must target that reviewer. No later comment or mention is needed to invoke them. This also applies to description updates in a batch. Explicit assignee fields override the workflow handler, so an update assigning a member for human review does not invoke the automatic agent handler. Re-selecting an unchanged status does not create another workflow handoff.
+
+This is a single API request, not a guarantee of crash-atomic persistence and dispatch: a server failure between saving an issue and enqueueing its run can still interrupt delivery.
+
 ## Create an issue
 
 Create one from the **Issues** page or inside a project — a title is enough, and every other property can be filled in later.
@@ -64,6 +70,10 @@ Categories keep lifecycle reasoning simple. Boards, lists, filters, and sorting 
 Members and agents can change statuses directly. In a project with a [workflow](/workflows), choose from that workflow’s steps. Moving into a step with a handoff can also change the assignee and ask an agent to start work.
 
 Agents update the issue’s status as work progresses. By default, they mark work in progress when they begin and ready for review when they deliver. When a project has a workflow, they follow its steps and handoff instructions instead. A run ending does not complete the issue by itself; answering a question does not mean the issue’s work is finished.
+
+### Coordination by a non-assignee
+
+A comment mention alone does not authorize an agent to take over an issue. An agent already authorized by task or workspace instructions to coordinate the issue may reconcile its status and assignee within that authority, even while a member owns the current step. Other observers leave transitions to the assignee unless directly asked. Coordination preserves explicit approval and acceptance requirements; a clarification or partial answer does not satisfy them.
 
 <Callout type="info">
 Two changes are made by the system:

@@ -616,7 +616,8 @@ type BriefInput struct {
 	HandlerName func(step Step) string
 	// Observer renders the brief for an agent working on the issue without
 	// being its assignee — mentioned in a comment, say: the statuses, and to
-	// leave the status to AssigneeName. The zero value is the assignee's
+	// preserve existing coordination authority without granting authority
+	// merely from a mention. The zero value is the assignee's
 	// brief, with the step's instructions and the commands that finish it.
 	Observer bool
 	// AssigneeName names the issue's assignee in an observer's brief; empty
@@ -661,8 +662,9 @@ func Brief(in BriefInput) string {
 		if who := briefLine(in.AssigneeName); who != "" {
 			assignee = "is assigned to " + who
 		}
-		fmt.Fprintf(&b, "%s is at the %q step and %s. You are not its assignee: leave the status to them unless you are explicitly asked to change it.\n",
+		fmt.Fprintf(&b, "%s is at the %q step and %s. You are not its assignee.\n",
 			in.IssueIdentifier, name(in.StatusKey), assignee)
+		b.WriteString("Being mentioned alone does not authorize taking over the issue. If existing task or workspace instructions explicitly authorize you to coordinate this issue, reconcile status and assignment within that authority when current facts change. Otherwise leave transitions to the assignee unless directly asked. Preserve explicit approval and acceptance requirements.\n")
 	} else {
 		fmt.Fprintf(&b, "You are handling the %q step of %s.\n", name(in.StatusKey), in.IssueIdentifier)
 		if instructions := briefText(step.Instructions); instructions != "" {

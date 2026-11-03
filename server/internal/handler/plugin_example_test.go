@@ -343,7 +343,7 @@ func TestExamplePluginAgentHookRoundTripIsSigned(t *testing.T) {
 
 	input := json.RawMessage(`{"service":"checkout-api","window_minutes":120}`)
 	result, err := testHandler.PluginService.InvokeAgentHook(
-		context.Background(), installationID, "correlate_deploys", parseUUID(testUserID), input)
+		context.Background(), installationID, "correlate_deploys", parseUUID(testUserID), service.AgentHookRun{}, input)
 	if err != nil {
 		t.Fatalf("agent hook invocation: %v", err)
 	}

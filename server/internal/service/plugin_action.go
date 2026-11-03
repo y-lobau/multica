@@ -34,6 +34,10 @@ type PluginActionCaller struct {
 	// or an invocation that had no issue — and the ordinary workspace and
 	// membership checks still apply on top.
 	IssueScope pgtype.UUID
+	// TaskScope, when set, is the ONLY agent run this caller may read. Set for a
+	// callback token issued about one run (a task event, or an agent-trigger
+	// tool call made from inside that run).
+	TaskScope pgtype.UUID
 }
 
 // AuthorizePluginAction performs the two checks that belong to the plugin: the

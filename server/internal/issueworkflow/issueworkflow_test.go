@@ -273,6 +273,26 @@ func TestBriefNamesStepCommandsAndHandlers(t *testing.T) {
 	}
 }
 
+func TestObserverBriefPreservesExistingCoordinationAuthority(t *testing.T) {
+	brief := Brief(BriefInput{
+		Workflow: devDefinition(), StatusKey: "code_review",
+		IssueIdentifier: "MUL-7", Observer: true, AssigneeName: "Lin",
+	})
+	for _, want := range []string{
+		"Being mentioned alone does not authorize taking over the issue.",
+		"If existing task or workspace instructions explicitly authorize you to coordinate this issue, reconcile status and assignment within that authority when current facts change.",
+		"Otherwise leave transitions to the assignee unless directly asked.",
+		"Preserve explicit approval and acceptance requirements.",
+	} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("observer brief missing coordination boundary %q:\n%s", want, brief)
+		}
+	}
+	if strings.Contains(brief, "leave the status to them unless you are explicitly asked to change it") {
+		t.Error("observer brief overrides existing coordination authority with a new-command requirement")
+	}
+}
+
 func TestBriefForObserverLeavesTheStepToItsAssignee(t *testing.T) {
 	brief := Brief(BriefInput{
 		Workflow:        devDefinition(),

@@ -60,6 +60,7 @@ type dispatchJob struct {
 	hook         plugincontract.Hook
 	eventType    string
 	issueID      pgtype.UUID
+	taskID       pgtype.UUID
 	payload      any
 }
 
@@ -234,6 +235,9 @@ func (d *PluginEventDispatcher) run(job dispatchJob) {
 	// Only now, past the flag: the id is needed to narrow the callback grant,
 	// and finding it means parsing the payload.
 	job.issueID = issueIDFromPayload(job.payload)
+	if isTaskEvent(job.eventType) {
+		job.taskID = taskIDFromPayload(job.payload)
+	}
 
 	installations, err := d.service.Queries.ListWorkspacePluginInstallations(ctx, job.installation.WorkspaceID)
 	if err != nil {
@@ -255,6 +259,15 @@ func (d *PluginEventDispatcher) run(job dispatchJob) {
 			d.deliver(ctx, installation, hook, job)
 		}
 	}
+}
+
+// isTaskEvent reports whether a plugin event describes one agent run.
+func isTaskEvent(eventType string) bool {
+	switch eventType {
+	case plugincontract.EventTaskStarted, plugincontract.EventTaskCompleted, plugincontract.EventTaskFailed:
+		return true
+	}
+	return false
 }
 
 func hookWantsEvent(hook plugincontract.Hook, eventType string) bool {
@@ -285,6 +298,7 @@ func (d *PluginEventDispatcher) deliver(ctx context.Context, installation db.Plu
 		// plugin's own, attributed to the installation.
 		Actor:   HookActor{Type: "plugin", ID: installation.ID},
 		IssueID: job.issueID,
+		TaskID:  job.taskID,
 		Input:   job.payload,
 	}
 

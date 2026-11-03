@@ -2589,6 +2589,54 @@ func (q *Queries) ListUnownedChannelChatContextRevisions(ctx context.Context, ch
 	return items, nil
 }
 
+const listUserChatMessagesByTask = `-- name: ListUserChatMessagesByTask :many
+SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids, channel_typing_settled FROM chat_message
+WHERE task_id = $1 AND role = 'user'
+ORDER BY created_at ASC, id ASC
+`
+
+// The member-typed input a chat task was created to answer. Rows are bound to
+// their task by LinkChatMessageToTask, so this is exactly the turn's input and
+// never an earlier or later turn of the same session.
+func (q *Queries) ListUserChatMessagesByTask(ctx context.Context, taskID pgtype.UUID) ([]ChatMessage, error) {
+	rows, err := q.db.Query(ctx, listUserChatMessagesByTask, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChatMessage{}
+	for rows.Next() {
+		var i ChatMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.ChatSessionID,
+			&i.Role,
+			&i.Content,
+			&i.TaskID,
+			&i.CreatedAt,
+			&i.FailureReason,
+			&i.ElapsedMs,
+			&i.MessageKind,
+			&i.ChannelMediaPendingUntil,
+			&i.ChannelIngested,
+			&i.QuickActions,
+			&i.ChannelContextRevision,
+			&i.ChannelOutboundType,
+			&i.ChannelOutboundInstallationID,
+			&i.ChannelOutboundChatID,
+			&i.ChannelOutboundMessageIds,
+			&i.ChannelTypingSettled,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockChatSessionForAppend = `-- name: LockChatSessionForAppend :one
 SELECT id FROM chat_session
 WHERE id = $1

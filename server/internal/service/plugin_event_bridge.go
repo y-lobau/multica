@@ -99,6 +99,28 @@ func issueIDFromPayload(payload any) pgtype.UUID {
 	return pgtype.UUID{}
 }
 
+// taskIDFromPayload finds the agent run a task event reports on, so the
+// callback grant issued for the hook can be narrowed to that one run. Only the
+// task events carry a top-level task_id; every other payload yields the zero
+// UUID, which leaves task reads narrowed by the issue grant alone.
+func taskIDFromPayload(payload any) pgtype.UUID {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return pgtype.UUID{}
+	}
+	var shape struct {
+		TaskID string `json:"task_id"`
+	}
+	if err := json.Unmarshal(encoded, &shape); err != nil || shape.TaskID == "" {
+		return pgtype.UUID{}
+	}
+	parsed, err := parseUUIDValue(shape.TaskID)
+	if err != nil {
+		return pgtype.UUID{}
+	}
+	return parsed
+}
+
 func payloadFlag(payload any, key string) bool {
 	if fields, ok := payload.(map[string]any); ok {
 		flag, _ := fields[key].(bool)
