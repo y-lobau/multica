@@ -240,11 +240,8 @@ func TestClaimTask_ProjectResourceFromForeignWorkspace_IsFilteredOut(t *testing.
 		"position":      2,
 	})
 
-	var agentID, runtimeID string
-	dbfx.QueryRow(t,
-		`SELECT id, runtime_id FROM agent WHERE workspace_id = $1 LIMIT 1`,
-		testWorkspaceID,
-	).Scan(&agentID, &runtimeID)
+	runtimeID := createClaimReclaimRuntime(t, context.Background(), t.Name()+" runtime")
+	agentID := dbfx.Agent(t, t.Name()+" agent", runtimeID)
 
 	issueID := dbfx.Issue(t, "issue with a mismatched project resource", testutil.Cols{
 		"project_id": projectID,
@@ -291,11 +288,8 @@ func TestClaimTask_AutopilotRunOnlyForeignWorkspace_CancelsTask(t *testing.T) {
 		t.Skip("database not available")
 	}
 
-	var localAgentID, localRuntimeID string
-	dbfx.QueryRow(t,
-		`SELECT id, runtime_id FROM agent WHERE workspace_id = $1 LIMIT 1`,
-		testWorkspaceID,
-	).Scan(&localAgentID, &localRuntimeID)
+	localRuntimeID := createClaimReclaimRuntime(t, context.Background(), t.Name()+" runtime")
+	localAgentID := dbfx.Agent(t, t.Name()+" agent", localRuntimeID)
 
 	foreignWorkspaceID, foreignProjectID := foreignWorkspaceWithProject(t, "foreign-autopilot-ws", "FAW")
 
