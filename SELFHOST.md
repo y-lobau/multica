@@ -44,6 +44,27 @@ The installation environment, database, uploads and backups remain outside Git.
 Consult `deployment-state.json` for whether the switch completed and the exact
 pre-upgrade backup directory. Never infer deployment from a branch or image tag.
 
+## Local CLI and daemon
+
+The CLI/daemon runs `0.8.0-selfhost`, application source `1612acbb`.
+The active macOS executable is `~/.local/lib/multica/multica`.
+Both `~/.local/bin/multica` and the historical
+`/Volumes/ext/_service/multica-cli/bin/multica` point to that executable.
+The profile LaunchAgent directly executes the internal path. Loading the freshly
+replaced external-drive executable stalled in macOS's loader; the internal path
+starts successfully. Server data and profiles retain their existing locations.
+
+For a CLI upgrade, build the native executable from the tested selfhost source,
+retain the previous binary, wait for zero active tasks and pending terminal
+reports, stop the profile daemon, then replace the internal executable atomically.
+Verify macOS signing and reload the profile LaunchAgent. Check version, daemon ID,
+workspace/runtime IDs and server-side online status after restart. The retained
+installation and rollback record is under
+`/Volumes/ext/_service/multica-cli/upgrades/selfhost-1612acbb/`.
+
+The native `/Applications/Multica.app` remains version 0.7.0. Server, CLI/daemon
+and native desktop application upgrades are separate operations.
+
 ## Regular upgrades
 
 1. Fetch `origin +refs/heads/main:refs/remotes/origin/main` explicitly (a release-tag-only refspec can leave `origin/main` stale), then create an isolated candidate branch/worktree from
