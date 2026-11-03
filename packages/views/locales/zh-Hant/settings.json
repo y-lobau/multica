@@ -428,6 +428,27 @@
     "admin_only": "只有所有者和管理員可以修改"
   },
   "plugins": {
+    "credentials": {
+      "open": "憑證",
+      "title": "外掛憑證",
+      "consequence": "這會立即取代現有的 Bearer 權杖。請更新使用它的用戶端。安裝簽章密鑰保持不變；輪替 Bearer 權杖不會撤銷該密鑰。",
+      "installation_id": "安裝 ID",
+      "copy_id": "複製安裝 ID",
+      "bearer": "Bearer 權杖",
+      "signing_secret": "簽章密鑰",
+      "private_hint": "請妥善保管這些憑證。關閉對話框會清除此處顯示的內容。請僅將外掛需要的憑證儲存於私人憑證儲存區。",
+      "no_signing_secret": "此後端未傳回簽章密鑰。此版本可能已停用或不支援 Hook 簽章。Bearer 權杖不是簽章密鑰。",
+      "failed": "憑證請求失敗或傳回無效回應。先前的 Bearer 權杖可能已被取代。重試前請檢查用戶端。",
+      "copied": "已複製",
+      "copy_failed": "複製失敗。請手動選取並複製內容。",
+      "close": "關閉並清除",
+      "confirm": "簽發／輪替 Bearer 權杖",
+      "toggle_label": "顯示或隱藏{{label}}",
+      "copy_label": "複製{{label}}",
+      "hide": "隱藏",
+      "reveal": "顯示",
+      "copy": "複製"
+    },
     "title": "外掛",
     "loading": "正在載入 Plugins",
     "load_failed": "無法載入 Plugins",
