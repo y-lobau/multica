@@ -15,6 +15,7 @@ The integrated application source is commit `396aaea`, based on upstream
 | Plugin credentials UI | Original commits `7446056` and `fbbe1d5`, transferred as `f7dacf6` and `67225d3` |
 | Upstream integration | Merge `a069015`; retains upstream handler-less workflow spans and daemon compatibility |
 | Locale and icon integration | `42825a6` and `396aaea`: Traditional Chinese credentials and the upstream icon package |
+| Test isolation | `1e259a8`: task-claim cases use fresh per-test runtimes; production heartbeat admission remains unchanged |
 
 Upstream PR #9506 (`6017861`) already includes the description/workflow-assignee
 fix. The integrated branch uses upstream's implementation and equivalent tests.
