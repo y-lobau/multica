@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@multica/ui/icons";
 import { useRotatePluginToken } from "@multica/core/plugins";
 import type { PluginTokenIssue } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
