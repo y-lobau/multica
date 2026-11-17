@@ -11,6 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/multica-ai/multica/server/internal/auth"
+	"github.com/multica-ai/multica/server/internal/testutil"
 )
 
 // Explicit opt-in: default tests never discover or execute an installed CLI.
@@ -26,12 +30,18 @@ func TestCommentUploadCLIAdoption(t *testing.T) {
 	if !filepath.IsAbs(cli) {
 		t.Fatal("MULTICA_TEST_ATTACHMENT_CLI must be absolute")
 	}
-	var agentID string
-	if err := testPool.QueryRow(context.Background(), `SELECT id::text FROM agent WHERE workspace_id=$1 LIMIT 1`, testWorkspaceID).Scan(&agentID); err != nil {
+	base := testutil.New(testPool, testWorkspaceID, testUserID)
+	workspaceID := base.Workspace(t, "CLI attachment contract", fmt.Sprintf("cli-upload-%d", time.Now().UnixNano()), testutil.Cols{"issue_prefix": "CLI"})
+	base.Member(t, workspaceID, testUserID, "owner")
+	fixtures := testutil.New(testPool, workspaceID, testUserID)
+	runtimeID := fixtures.Runtime(t, "CLI attachment runtime")
+	agentID := fixtures.Agent(t, "CLI attachment agent", runtimeID)
+	taskID := fixtures.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "originator_user_id": testUserID, "accountable_user_id": testUserID})
+	token, err := auth.GenerateAgentTaskToken()
+	if err != nil {
 		t.Fatal(err)
 	}
-	taskID := ensureAgentTask(t, agentID)
-	token := mintAgentTaskToken(t, agentID, taskID, testUserID)
+	fixtures.Insert(t, "task_token", testutil.Cols{"token_hash": auth.HashToken(token), "task_id": taskID, "agent_id": agentID, "workspace_id": workspaceID, "user_id": testUserID, "expires_at": time.Now().Add(time.Hour)})
 	bindIssue := func(t *testing.T, issueID string) {
 		t.Helper()
 		if _, err := testPool.Exec(context.Background(), `UPDATE agent_task_queue SET issue_id=$1, status='running', started_at=now(), originator_user_id=$2, accountable_user_id=$2 WHERE id=$3`, issueID, testUserID, taskID); err != nil {
@@ -40,7 +50,7 @@ func TestCommentUploadCLIAdoption(t *testing.T) {
 	}
 	work := t.TempDir()
 	childEnv := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + work, "TMPDIR=" + work,
-		"MULTICA_SERVER_URL=" + testServer.URL, "MULTICA_TOKEN=" + token, "MULTICA_WORKSPACE_ID=" + testWorkspaceID,
+		"MULTICA_SERVER_URL=" + testServer.URL, "MULTICA_TOKEN=" + token, "MULTICA_WORKSPACE_ID=" + workspaceID,
 		"MULTICA_TASK_CONFIG_ROOT=" + filepath.Join(work, "config")}
 	call := func(args ...string) ([]byte, error) {
 		cmd := exec.Command(cli, args...)
@@ -110,8 +120,8 @@ func TestCommentUploadCLIAdoption(t *testing.T) {
 		{"single", "Synthetic report", []string{"report.md"}},
 		{"batch", "Synthetic batch\n\n![Screenshot](./shot.png)\n\n!file[Details](./details.json)", []string{"report.md", "shot.png", "details.json"}},
 	} {
+		issueID := fixtures.Issue(t, "CLI attachment "+tc.name)
 		t.Run(tc.name, func(t *testing.T) {
-			issueID := createIssue(t, "CLI attachment "+tc.name)
 			bindIssue(t, issueID)
 			if err := os.WriteFile(filepath.Join(work, "body.md"), []byte(tc.body), 0600); err != nil {
 				t.Fatal(err)
@@ -147,7 +157,7 @@ func TestCommentUploadCLIAdoption(t *testing.T) {
 			}
 		})
 	}
-	issueID := createIssue(t, "CLI description route")
+	issueID := fixtures.Issue(t, "CLI description route")
 	bindIssue(t, issueID)
 	var updated map[string]any
 	jsonCall(t, &updated, "issue", "update", issueID, "--attachment", "report.md", "--output", "json")
