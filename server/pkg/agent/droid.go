@@ -259,17 +259,22 @@ func (b *droidBackend) Execute(ctx context.Context, prompt string, opts ExecOpti
 		}
 		cleaning := false
 		beginCleanup := func() {
+			if !cleaning {
+				// Preserve the outcome established before bounded cleanup. A later
+				// task deadline cannot erase a verified completion and process exit.
+				runErr = runCtx.Err()
+				ctxDone = nil
+			}
+			// A large terminal frame may finish decoding after the exit drain
+			// timer starts cleanup. Publish that outcome before sending Result,
+			// even when cleanup is already in progress.
+			if waitCh == nil && (state.sawCompletion || state.failed) && runErr == nil {
+				terminalObserved.Store(true)
+			}
 			if cleaning {
 				return
 			}
 			cleaning = true
-			// Preserve the outcome established before bounded cleanup. A later
-			// task deadline cannot erase a verified completion and process exit.
-			runErr = runCtx.Err()
-			ctxDone = nil
-			if waitCh == nil && (state.sawCompletion || state.failed) && runErr == nil {
-				terminalObserved.Store(true)
-			}
 			signalProcessGroup(cmd, syscall.SIGKILL)
 			_ = stdin.Close()
 			setDrainDeadline()

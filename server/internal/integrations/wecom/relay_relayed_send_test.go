@@ -22,6 +22,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -153,6 +154,8 @@ type relaySendRig struct {
 // relayRetryConfig is a whole retry chain measured in milliseconds, so a test
 // can watch one run out. LeaseSettle/RetryBackoff are the only two knobs the
 // chain is built from, and retryPlan is asked for the length rather than told.
+// These in-memory timer tests use synctest so scheduling cannot consume the
+// 20ms delivery budget before the intended retry/claim path runs.
 var relayRetryConfig = RelayConfig{Shards: 1, LeaseSettle: 40 * time.Millisecond, RetryBackoff: 5 * time.Millisecond, DeliveryBudget: 20 * time.Millisecond}
 
 func newRelaySendRig(t *testing.T, failOn func(n int) bool) *relaySendRig {
@@ -250,29 +253,31 @@ func (r *relaySendRig) stop() {
 // type error, and no existing test drives deliverRelayed's retry path at all.
 func TestRelayedReply_AFrameStillInFlightRecordsNoReplyOutcome(t *testing.T) {
 	t.Parallel()
-	rig := newRelaySendRig(t, func(int) bool { return true }) // the socket never takes anything
-	wantAttempts := len(relayRetryConfig.retryPlan()) + 1     // the first offer, then the chain
+	synctest.Test(t, func(t *testing.T) {
+		rig := newRelaySendRig(t, func(int) bool { return true }) // the socket never takes anything
+		wantAttempts := len(relayRetryConfig.retryPlan()) + 1     // the first offer, then the chain
 
-	rig.route(t, "答案")
-	waitFor(t, "the retry chain to run out", func() bool {
-		return rig.conn.writeAttempts() >= wantAttempts
+		rig.route(t, "答案")
+		waitFor(t, "the retry chain to run out", func() bool {
+			return rig.conn.writeAttempts() >= wantAttempts
+		})
+		rig.stop()
+
+		if got := rig.conn.writeAttempts(); got != wantAttempts {
+			t.Fatalf("delivery attempts = %d, want %d — the dispatcher's own chain", got, wantAttempts)
+		}
+		if got := rig.mx.get("outbound_dropped"); got != 0 {
+			t.Errorf("outbound_dropped = %d, want 0 — this reply was re-offered %d times and "+
+				"counting each one turns the drop counter into a retry counter; the publisher's "+
+				"watchOutcomes is the one owner that settles a routed reply, once", got, wantAttempts)
+		}
+		if got := rig.mx.get("outbound_unconfirmed"); got != 0 {
+			t.Errorf("outbound_unconfirmed = %d, want 0 — same rule, other counter", got)
+		}
+		if got := rig.mx.get("outbound_delivered"); got != 0 {
+			t.Errorf("outbound_delivered = %d, want 0 — nothing reached the chat", got)
+		}
 	})
-	rig.stop()
-
-	if got := rig.conn.writeAttempts(); got != wantAttempts {
-		t.Fatalf("delivery attempts = %d, want %d — the dispatcher's own chain", got, wantAttempts)
-	}
-	if got := rig.mx.get("outbound_dropped"); got != 0 {
-		t.Errorf("outbound_dropped = %d, want 0 — this reply was re-offered %d times and "+
-			"counting each one turns the drop counter into a retry counter; the publisher's "+
-			"watchOutcomes is the one owner that settles a routed reply, once", got, wantAttempts)
-	}
-	if got := rig.mx.get("outbound_unconfirmed"); got != 0 {
-		t.Errorf("outbound_unconfirmed = %d, want 0 — same rule, other counter", got)
-	}
-	if got := rig.mx.get("outbound_delivered"); got != 0 {
-		t.Errorf("outbound_delivered = %d, want 0 — nothing reached the chat", got)
-	}
 }
 
 // The other half of the same rule: a reply the chain eventually delivers is
@@ -284,22 +289,24 @@ func TestRelayedReply_AFrameStillInFlightRecordsNoReplyOutcome(t *testing.T) {
 // this reports outbound_dropped = 1 alongside outbound_delivered = 1.
 func TestRelayedReply_ARetryThatSucceedsIsNotAlsoADrop(t *testing.T) {
 	t.Parallel()
-	rig := newRelaySendRig(t, func(n int) bool { return n == 1 }) // the first offer only
+	synctest.Test(t, func(t *testing.T) {
+		rig := newRelaySendRig(t, func(n int) bool { return n == 1 }) // the first offer only
 
-	rig.route(t, "答案")
-	waitFor(t, "the reply to reach the chat", func() bool { return len(rig.conn.sent()) == 1 })
-	rig.stop()
+		rig.route(t, "答案")
+		waitFor(t, "the reply to reach the chat", func() bool { return len(rig.conn.sent()) == 1 })
+		rig.stop()
 
-	if got := rig.conn.sent(); len(got) != 1 || got[0] != "答案" {
-		t.Fatalf("the chat received %q, want the one answer", got)
-	}
-	if got := rig.mx.get("outbound_delivered"); got != 1 {
-		t.Errorf("outbound_delivered = %d, want 1", got)
-	}
-	if got := rig.mx.get("outbound_dropped"); got != 0 {
-		t.Errorf("outbound_dropped = %d, want 0 — the same reply cannot be delivered and "+
-			"dropped at once", got)
-	}
+		if got := rig.conn.sent(); len(got) != 1 || got[0] != "答案" {
+			t.Fatalf("the chat received %q, want the one answer", got)
+		}
+		if got := rig.mx.get("outbound_delivered"); got != 1 {
+			t.Errorf("outbound_delivered = %d, want 1", got)
+		}
+		if got := rig.mx.get("outbound_dropped"); got != 0 {
+			t.Errorf("outbound_dropped = %d, want 0 — the same reply cannot be delivered and "+
+				"dropped at once", got)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -316,26 +323,28 @@ func TestRelayedReply_ARetryThatSucceedsIsNotAlsoADrop(t *testing.T) {
 // re-offer loses the claim and nothing is ever delivered or counted.
 func TestRelayedReply_AReleaseWhoseResultIsUnknownIsReclaimedByTheNextOffer(t *testing.T) {
 	t.Parallel()
-	dedupe := newSharedDedupe()
-	dedupe.releaseFails = true // the DEL never lands; the key keeps our token
-	rig := newRelaySendRigWithDedupe(t, func(n int) bool { return n == 1 }, dedupe)
+	synctest.Test(t, func(t *testing.T) {
+		dedupe := newSharedDedupe()
+		dedupe.releaseFails = true // the DEL never lands; the key keeps our token
+		rig := newRelaySendRigWithDedupe(t, func(n int) bool { return n == 1 }, dedupe)
 
-	rig.route(t, "the agent reply")
-	waitFor(t, "the re-offer to deliver", func() bool {
-		return rig.mx.get("outbound_delivered") == 1
+		rig.route(t, "the agent reply")
+		waitFor(t, "the re-offer to deliver", func() bool {
+			return rig.mx.get("outbound_delivered") == 1
+		})
+		time.Sleep(rig.router.outcomeGrace())
+
+		if got := rig.mx.get("outbound_dropped"); got != 0 {
+			t.Fatalf("outbound_dropped = %d, want 0: an unknown release is not a loss", got)
+		}
+		if got := rig.conn.writeAttempts(); got != 2 {
+			t.Fatalf("%d offers, want 2: the failed one and the re-claimed one", got)
+		}
+		if dedupe.heldCount() != 1 || dedupe.valueOf(dedupeKey(rig.lastEventID())) != claimSettledValue {
+			t.Fatalf("claim store holds %d key(s) with value %q, want the one key settled by its holder",
+				dedupe.heldCount(), dedupe.valueOf(dedupeKey(rig.lastEventID())))
+		}
 	})
-	time.Sleep(rig.router.outcomeGrace())
-
-	if got := rig.mx.get("outbound_dropped"); got != 0 {
-		t.Fatalf("outbound_dropped = %d, want 0: an unknown release is not a loss", got)
-	}
-	if got := rig.conn.writeAttempts(); got != 2 {
-		t.Fatalf("%d offers, want 2: the failed one and the re-claimed one", got)
-	}
-	if dedupe.heldCount() != 1 || dedupe.valueOf(dedupeKey(rig.lastEventID())) != claimSettledValue {
-		t.Fatalf("claim store holds %d key(s) with value %q, want the one key settled by its holder",
-			dedupe.heldCount(), dedupe.valueOf(dedupeKey(rig.lastEventID())))
-	}
 }
 
 // The other face of an unknown release: the DEL DID land and only its response
@@ -348,22 +357,24 @@ func TestRelayedReply_AReleaseWhoseResultIsUnknownIsReclaimedByTheNextOffer(t *t
 // outbound_delivered = 1.
 func TestRelayedReply_AReleaseThatLandedButErroredIsTakenFreshByTheNextOffer(t *testing.T) {
 	t.Parallel()
-	dedupe := newSharedDedupe()
-	dedupe.releaseErrAfterDelete = true
-	rig := newRelaySendRigWithDedupe(t, func(n int) bool { return n == 1 }, dedupe)
+	synctest.Test(t, func(t *testing.T) {
+		dedupe := newSharedDedupe()
+		dedupe.releaseErrAfterDelete = true
+		rig := newRelaySendRigWithDedupe(t, func(n int) bool { return n == 1 }, dedupe)
 
-	rig.route(t, "the agent reply")
-	waitFor(t, "the re-offer to deliver", func() bool {
-		return rig.mx.get("outbound_delivered") == 1
+		rig.route(t, "the agent reply")
+		waitFor(t, "the re-offer to deliver", func() bool {
+			return rig.mx.get("outbound_delivered") == 1
+		})
+		time.Sleep(rig.router.outcomeGrace())
+
+		if got := rig.mx.get("outbound_dropped"); got != 0 {
+			t.Fatalf("outbound_dropped = %d, want 0", got)
+		}
+		if got := rig.conn.writeAttempts(); got != 2 {
+			t.Fatalf("%d offers, want 2", got)
+		}
 	})
-	time.Sleep(rig.router.outcomeGrace())
-
-	if got := rig.mx.get("outbound_dropped"); got != 0 {
-		t.Fatalf("outbound_dropped = %d, want 0", got)
-	}
-	if got := rig.conn.writeAttempts(); got != 2 {
-		t.Fatalf("%d offers, want 2", got)
-	}
 }
 
 // The boundary the settle retry deliberately stops at, pinned so it can only
@@ -382,22 +393,24 @@ func TestRelayedReply_AReleaseThatLandedButErroredIsTakenFreshByTheNextOffer(t *
 // monitoring gap, not a lost answer, and settleClaim logs a warning naming it.
 func TestRelayedReply_ASettleThatNeverConfirmsLeavesTheOutcomeUnrecorded(t *testing.T) {
 	t.Parallel()
-	dedupe := newSharedDedupe()
-	dedupe.settleErrAfterWrite = claimSettleAttempts
-	rig := newRelaySendRigWithDedupe(t, nil, dedupe)
+	synctest.Test(t, func(t *testing.T) {
+		dedupe := newSharedDedupe()
+		dedupe.settleErrAfterWrite = claimSettleAttempts
+		rig := newRelaySendRigWithDedupe(t, nil, dedupe)
 
-	rig.route(t, "the agent reply")
-	waitFor(t, "the settled state the holder never gets to hear about", func() bool {
-		return dedupe.valueOf(dedupeKey(rig.lastEventID())) == claimSettledValue
+		rig.route(t, "the agent reply")
+		waitFor(t, "the settled state the holder never gets to hear about", func() bool {
+			return dedupe.valueOf(dedupeKey(rig.lastEventID())) == claimSettledValue
+		})
+		time.Sleep(rig.router.outcomeGrace())
+
+		if got := rig.conn.writeAttempts(); got != 1 {
+			t.Fatalf("%d offers, want 1: the reply reached the chat, and an unconfirmed settle must not re-send it", got)
+		}
+		if got := rig.mx.get("outbound_delivered") + rig.mx.get("outbound_dropped"); got != 0 {
+			t.Fatalf("the holder recorded %d outcome(s), want 0: it cannot know whether its settle landed", got)
+		}
 	})
-	time.Sleep(rig.router.outcomeGrace())
-
-	if got := rig.conn.writeAttempts(); got != 1 {
-		t.Fatalf("%d offers, want 1: the reply reached the chat, and an unconfirmed settle must not re-send it", got)
-	}
-	if got := rig.mx.get("outbound_delivered") + rig.mx.get("outbound_dropped"); got != 0 {
-		t.Fatalf("the holder recorded %d outcome(s), want 0: it cannot know whether its settle landed", got)
-	}
 }
 
 // A settle whose request never reached the store is retried, and the retry
@@ -408,28 +421,30 @@ func TestRelayedReply_ASettleThatNeverConfirmsLeavesTheOutcomeUnrecorded(t *test
 // with outbound_delivered = 0.
 func TestRelayedReply_ASettleThatNeverExecutedIsRetried(t *testing.T) {
 	t.Parallel()
-	dedupe := newSharedDedupe()
-	dedupe.settleErrBeforeWrite = 1
-	rig := newRelaySendRigWithDedupe(t, nil, dedupe)
+	synctest.Test(t, func(t *testing.T) {
+		dedupe := newSharedDedupe()
+		dedupe.settleErrBeforeWrite = 1
+		rig := newRelaySendRigWithDedupe(t, nil, dedupe)
 
-	rig.route(t, "the agent reply")
-	waitFor(t, "the delivery to be recorded after the settle retry", func() bool {
-		return rig.mx.get("outbound_delivered") == 1
+		rig.route(t, "the agent reply")
+		waitFor(t, "the delivery to be recorded after the settle retry", func() bool {
+			return rig.mx.get("outbound_delivered") == 1
+		})
+		time.Sleep(rig.router.outcomeGrace())
+
+		if got := rig.mx.get("outbound_delivered"); got != 1 {
+			t.Fatalf("outbound_delivered = %d, want 1", got)
+		}
+		if got := rig.mx.get("outbound_dropped"); got != 0 {
+			t.Fatalf("outbound_dropped = %d, want 0", got)
+		}
+		if got := rig.conn.writeAttempts(); got != 1 {
+			t.Fatalf("%d offers, want 1: a settle retry is not a re-delivery", got)
+		}
+		if v := dedupe.valueOf(dedupeKey(rig.lastEventID())); v != claimSettledValue {
+			t.Fatalf("claim value = %q, want %q", v, claimSettledValue)
+		}
 	})
-	time.Sleep(rig.router.outcomeGrace())
-
-	if got := rig.mx.get("outbound_delivered"); got != 1 {
-		t.Fatalf("outbound_delivered = %d, want 1", got)
-	}
-	if got := rig.mx.get("outbound_dropped"); got != 0 {
-		t.Fatalf("outbound_dropped = %d, want 0", got)
-	}
-	if got := rig.conn.writeAttempts(); got != 1 {
-		t.Fatalf("%d offers, want 1: a settle retry is not a re-delivery", got)
-	}
-	if v := dedupe.valueOf(dedupeKey(rig.lastEventID())); v != claimSettledValue {
-		t.Fatalf("claim value = %q, want %q", v, claimSettledValue)
-	}
 }
 
 // ---- a relayed answer belongs in the bubble, not under it ----

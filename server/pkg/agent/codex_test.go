@@ -4170,7 +4170,7 @@ func TestCodexInterruptCompletesNearConfiguredDeadline(t *testing.T) {
 	}
 
 	marker := filepath.Join(t.TempDir(), "turn-started")
-	fakePath := writeFakeCodexAppServer(t, ""+
+	fakePath := writeTimedStreamFixture(t, "codex", ""+
 		`read line`+"\n"+
 		`echo '{"jsonrpc":"2.0","id":1,"result":{}}'`+"\n"+
 		`read line`+"\n"+
@@ -4247,7 +4247,7 @@ func TestCodexExecuteLegacyFirstTurnMessageSatisfiesProgress(t *testing.T) {
 		t.Skip("shell-script fixture is POSIX-only")
 	}
 
-	fakePath := writeFakeCodexAppServer(t, ""+
+	fakePath := writeTimedStreamFixture(t, "codex", ""+
 		`read line`+"\n"+
 		`echo '{"jsonrpc":"2.0","id":1,"result":{}}'`+"\n"+
 		`read line`+"\n"+
@@ -4279,7 +4279,9 @@ func TestCodexExecuteSemanticInactivityAllowsContinuousMessages(t *testing.T) {
 		t.Skip("shell-script fixture is POSIX-only")
 	}
 
-	fakePath := writeFakeCodexAppServer(t, ""+
+	// Each 500ms gap stays below inactivity, while the 1.5s stream exceeds
+	// it. Keep scheduling headroom without losing the progress-reset check.
+	fakePath := writeTimedStreamFixture(t, "codex", ""+
 		`read line`+"\n"+
 		`echo '{"jsonrpc":"2.0","id":1,"result":{}}'`+"\n"+
 		`read line`+"\n"+
@@ -4288,16 +4290,16 @@ func TestCodexExecuteSemanticInactivityAllowsContinuousMessages(t *testing.T) {
 		`read line`+"\n"+
 		`echo '{"jsonrpc":"2.0","id":3,"result":{}}'`+"\n"+
 		`echo '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thr-progress","turn":{"id":"turn-progress"}}}'`+"\n"+
-		`sleep 0.05`+"\n"+
+		`sleep 0.5`+"\n"+
 		`echo '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr-progress","item":{"type":"agentMessage","id":"msg-1","text":"still working"}}}'`+"\n"+
-		`sleep 0.05`+"\n"+
+		`sleep 0.5`+"\n"+
 		`echo '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr-progress","item":{"type":"commandExecution","id":"cmd-1","aggregatedOutput":"ok"}}}'`+"\n"+
-		`sleep 0.05`+"\n"+
+		`sleep 0.5`+"\n"+
 		`echo '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thr-progress","turn":{"id":"turn-progress","status":"completed"}}}'`+"\n")
 
 	result := executeFakeCodex(t, fakePath, ExecOptions{
 		Timeout:                   5 * time.Second,
-		SemanticInactivityTimeout: 90 * time.Millisecond,
+		SemanticInactivityTimeout: 900 * time.Millisecond,
 	})
 	if result.Status != "completed" {
 		t.Fatalf("expected completed, got status=%q error=%q", result.Status, result.Error)
@@ -4313,7 +4315,7 @@ func TestCodexExecuteSemanticInactivityAllowsContinuousDeltaProgress(t *testing.
 		t.Skip("shell-script fixture is POSIX-only")
 	}
 
-	fakePath := writeFakeCodexAppServer(t, ""+
+	fakePath := writeTimedStreamFixture(t, "codex", ""+
 		`read line`+"\n"+
 		`echo '{"jsonrpc":"2.0","id":1,"result":{}}'`+"\n"+
 		`read line`+"\n"+

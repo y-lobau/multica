@@ -18,13 +18,15 @@ func TestStartHermesTaskGatewayLifecycle(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			home := t.TempDir()
 			path, record := filepath.Join(home, "hermes"), filepath.Join(home, "invocation")
-			writeTestExecutable(t, path, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" \"$HERMES_HOME\" \"$PYTHONIOENCODING\" \"$HERMES_GATEWAY_DETACHED\" > \"$RECORD\"\nif [ \"$MODE\" = exit ]; then exit 7; fi\nexec sleep 60\n"))
+			writeTestExecutable(t, path, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" \"$HERMES_HOME\" \"$PYTHONIOENCODING\" \"$HERMES_GATEWAY_DETACHED\" > \"$RECORD\"\n: > \"${RECORD}.ready\"\nif [ \"$MODE\" = exit ]; then exit 7; fi\nexec sleep 60\n"))
 			cfg := Config{ExecutablePath: path, LaunchPrefix: []string{"wrapped"}, Logger: slog.Default(),
 				Env: map[string]string{"HERMES_HOME": home, "RECORD": record, "MODE": mode, "PYTHONIOENCODING": "ascii", "HERMES_GATEWAY_DETACHED": "0"}}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			stop, err := startHermesTaskGateway(ctx, cfg, home, func(string) (bool, error) {
-				if _, err := os.Stat(record); err != nil {
+				// File creation precedes the printf's last write. Publish readiness
+				// only after the complete invocation is available for assertions.
+				if _, err := os.Stat(record + ".ready"); err != nil {
 					return false, nil
 				}
 				switch mode {

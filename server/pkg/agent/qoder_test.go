@@ -1015,13 +1015,10 @@ func TestQoderBackendClearsSessionIDWhenResumedSessionNotFoundAtSetModel(t *test
 func TestQoderDrainsNotificationsAfterPromptResponse(t *testing.T) {
 	t.Parallel()
 
-	fakePath := filepath.Join(t.TempDir(), "qoder")
-	writeTestExecutable(t, fakePath, []byte(fakeQoderACPScript()))
-
+	fakePath := writeTimedFixture(t, "qoder", timedFixture{ACP: true, SessionID: "ses_fake", Text: "ok", Tail: " tail"})
 	backend, err := New("qoder", Config{
 		ExecutablePath: fakePath,
 		Logger:         slog.Default(),
-		Env:            map[string]string{"QODER_LATE_CHUNK": "1"},
 	})
 	if err != nil {
 		t.Fatalf("new qoder backend: %v", err)

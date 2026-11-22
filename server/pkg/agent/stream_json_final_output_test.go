@@ -269,8 +269,9 @@ printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"tool_
 			// bufio.ErrTooLong while the child still exits 0. The count is
 			// derived from the constant so raising the cap cannot silently
 			// turn this case into a plain-oversized-line pass.
+			// Raw NULs exceed the same line cap without a slow tr pipeline.
 			scriptBody: fmt.Sprintf(
-				`dd if=/dev/zero bs=1048576 count=%d 2>/dev/null | tr '\000' x; printf '\n'`,
+				`dd if=/dev/zero bs=1048576 count=%d 2>/dev/null; printf '\n'`,
 				agentStreamMaxLineBytes/(1024*1024)+1,
 			) + "\n",
 			wantStatus: "failed",

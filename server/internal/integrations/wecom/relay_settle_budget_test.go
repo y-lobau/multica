@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -32,40 +33,42 @@ import (
 // d.budget) and the first case fails with a deadline a whole budget out.
 func TestRedisDedupe_BookkeepingKeepsABoundingDeadline(t *testing.T) {
 	t.Parallel()
-	d := &redisDedupe{log: slog.Default(), budget: 2 * time.Second}
+	synctest.Test(t, func(t *testing.T) {
+		d := &redisDedupe{log: slog.Default(), budget: 2 * time.Second}
 
-	// A caller's deadline shorter than the store's budget is the bound.
-	bounded, cancelBounded := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	defer cancelBounded()
-	ctx, cancel := d.bookkeepingBudget(bounded)
-	defer cancel()
-	got, ok := ctx.Deadline()
-	if !ok {
-		t.Fatal("the bookkeeping context has no deadline, want the caller's")
-	}
-	if want, _ := bounded.Deadline(); !got.Equal(want) {
-		t.Fatalf("deadline = %v, want the caller's %v: a drain budget has to bound the round trips inside it", got, want)
-	}
+		// A caller's deadline shorter than the store's budget is the bound.
+		bounded, cancelBounded := context.WithTimeout(context.Background(), 30*time.Millisecond)
+		defer cancelBounded()
+		ctx, cancel := d.bookkeepingBudget(bounded)
+		defer cancel()
+		got, ok := ctx.Deadline()
+		if !ok {
+			t.Fatal("the bookkeeping context has no deadline, want the caller's")
+		}
+		if want, _ := bounded.Deadline(); !got.Equal(want) {
+			t.Fatalf("deadline = %v, want the caller's %v: a drain budget has to bound the round trips inside it", got, want)
+		}
 
-	// Cancelling the caller does NOT end the call: the delivery is already in
-	// the chat and its claim still has to be settled.
-	live, cancelLive := context.WithCancel(context.Background())
-	survives, cancelSurvives := d.bookkeepingBudget(live)
-	defer cancelSurvives()
-	cancelLive()
-	select {
-	case <-survives.Done():
-		t.Fatal("the bookkeeping context died with its caller: a delivered frame's claim still has to be settled")
-	default:
-	}
+		// Cancelling the caller does NOT end the call: the delivery is already in
+		// the chat and its claim still has to be settled.
+		live, cancelLive := context.WithCancel(context.Background())
+		survives, cancelSurvives := d.bookkeepingBudget(live)
+		defer cancelSurvives()
+		cancelLive()
+		select {
+		case <-survives.Done():
+			t.Fatal("the bookkeeping context died with its caller: a delivered frame's claim still has to be settled")
+		default:
+		}
 
-	// With no caller deadline the store's own budget is what applies.
-	own, cancelOwn := d.bookkeepingBudget(context.Background())
-	defer cancelOwn()
-	deadline, ok := own.Deadline()
-	if !ok || time.Until(deadline) <= time.Second {
-		t.Fatalf("deadline = %v (ok=%v), want the store's own budget out", deadline, ok)
-	}
+		// With no caller deadline the store's own budget is what applies.
+		own, cancelOwn := d.bookkeepingBudget(context.Background())
+		defer cancelOwn()
+		deadline, ok := own.Deadline()
+		if !ok || time.Until(deadline) <= time.Second {
+			t.Fatalf("deadline = %v (ok=%v), want the store's own budget out", deadline, ok)
+		}
+	})
 }
 
 // slowSettleStore is a claim store whose Settle takes a fixed round trip
@@ -111,38 +114,40 @@ func (s *slowSettleStore) settleAttempts() int {
 // flight when the deadline passes is allowed to finish, but the chain stops.
 func TestRelayDrain_OpensNoNewSettleAttemptPastItsBudget(t *testing.T) {
 	t.Parallel()
-	const (
-		drainBudget = 50 * time.Millisecond
-		roundTrip   = 100 * time.Millisecond
-	)
-	store := &slowSettleStore{roundTrip: roundTrip}
-	h := &ownsSocketHandler{owns: true}
-	router := NewRelayOutbound(&fanoutRelay{}, store, RelayConfig{
-		Shards:       1,
-		DrainBudget:  drainBudget,
-		RetryBackoff: 10 * time.Millisecond,
-	}, testLogger())
-	router.Attach(h)
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			drainBudget = 50 * time.Millisecond
+			roundTrip   = 100 * time.Millisecond
+		)
+		store := &slowSettleStore{roundTrip: roundTrip}
+		h := &ownsSocketHandler{owns: true}
+		router := NewRelayOutbound(&fanoutRelay{}, store, RelayConfig{
+			Shards:       1,
+			DrainBudget:  drainBudget,
+			RetryBackoff: 10 * time.Millisecond,
+		}, testLogger())
+		router.Attach(h)
 
-	late := queued{
-		frame:   relayFrame{Kind: relayKindReply, InstallationID: "inst-1", Content: "answer"},
-		eventID: "ev-1",
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+		late := queued{
+			frame:   relayFrame{Kind: relayKindReply, InstallationID: "inst-1", Content: "answer"},
+			eventID: "ev-1",
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
 
-	start := time.Now()
-	router.drainRemaining(ctx, make(chan queued), map[string]*hold{}, &late)
-	elapsed := time.Since(start)
+		start := time.Now()
+		router.drainRemaining(ctx, make(chan queued), map[string]*hold{}, &late)
+		elapsed := time.Since(start)
 
-	if got := store.settleAttempts(); got != 1 {
-		t.Fatalf("the drain made %d settle attempts, want 1: the first already ran past a %v budget, "+
-			"so no further attempt may be opened", got, drainBudget)
-	}
-	if elapsed >= drainBudget+2*roundTrip {
-		t.Fatalf("the drain took %v: a %v budget must not be extended by a whole retry chain", elapsed, drainBudget)
-	}
-	if got := len(h.sent()); got != 1 {
-		t.Fatalf("%d frames reached the chat, want 1: the delivery itself is not what is bounded here", got)
-	}
+		if got := store.settleAttempts(); got != 1 {
+			t.Fatalf("the drain made %d settle attempts, want 1: the first already ran past a %v budget, "+
+				"so no further attempt may be opened", got, drainBudget)
+		}
+		if elapsed >= drainBudget+2*roundTrip {
+			t.Fatalf("the drain took %v: a %v budget must not be extended by a whole retry chain", elapsed, drainBudget)
+		}
+		if got := len(h.sent()); got != 1 {
+			t.Fatalf("%d frames reached the chat, want 1: the delivery itself is not what is bounded here", got)
+		}
+	})
 }

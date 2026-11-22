@@ -1008,13 +1008,10 @@ done
 func TestKimiDrainsNotificationsAfterPromptResponse(t *testing.T) {
 	t.Parallel()
 
-	fakePath := filepath.Join(t.TempDir(), "kimi")
-	writeTestExecutable(t, fakePath, []byte(fakeKimiACPPromptScript()))
-
+	fakePath := writeTimedFixture(t, "kimi", timedFixture{ACP: true, SessionID: "ses_fake", Text: "pong", Tail: " tail"})
 	backend, err := New("kimi", Config{
 		ExecutablePath: fakePath,
 		Logger:         slog.Default(),
-		Env:            map[string]string{"KIMI_LATE_CHUNK": "1"},
 	})
 	if err != nil {
 		t.Fatalf("new kimi backend: %v", err)

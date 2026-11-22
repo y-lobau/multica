@@ -293,13 +293,10 @@ func TestTraecliUsesSessionLoadForResume(t *testing.T) {
 func TestTraecliDrainsNotificationsAfterPromptResponse(t *testing.T) {
 	t.Parallel()
 
-	fakePath := filepath.Join(t.TempDir(), "trae")
-	writeTestExecutable(t, fakePath, []byte(fakeTraecliACPScript()))
-
+	fakePath := writeTimedFixture(t, "traecli", timedFixture{ACP: true, SessionID: "ses_fake", Text: "pong", Tail: " tail"})
 	backend, err := New("traecli", Config{
 		ExecutablePath: fakePath,
 		Logger:         slog.Default(),
-		Env:            map[string]string{"TRAECLI_LATE_CHUNK": "1"},
 	})
 	if err != nil {
 		t.Fatalf("new traecli backend: %v", err)

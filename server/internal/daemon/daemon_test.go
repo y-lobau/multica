@@ -1619,8 +1619,13 @@ func TestWatchTaskCancellation_RunningTaskNotInterrupted(t *testing.T) {
 	t.Parallel()
 
 	var calls atomic.Int32
+	fivePollsCompleted := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
+		// Requests are serial: seeing request six proves five running-status
+		// responses have been processed without interrupting the task.
+		if calls.Add(1) == 6 {
+			close(fivePollsCompleted)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"running"}`))
 	}))
@@ -1635,10 +1640,15 @@ func TestWatchTaskCancellation_RunningTaskNotInterrupted(t *testing.T) {
 	select {
 	case <-cancelled:
 		t.Fatal("watchTaskCancellation should not signal cancellation while task is running")
-	case <-time.After(150 * time.Millisecond):
+	case <-fivePollsCompleted:
+		t.Logf("verified %d completed running-status polls", calls.Load()-1)
+	case <-time.After(2 * time.Second):
+		t.Fatalf("watcher did not complete five running-status polls (requests=%d)", calls.Load())
 	}
-	if calls.Load() < 5 {
-		t.Fatalf("expected the watcher to poll at least 5 times in 150ms, got %d", calls.Load())
+	select {
+	case <-cancelled:
+		t.Fatal("watchTaskCancellation interrupted a running task after five polls")
+	default:
 	}
 }
 
