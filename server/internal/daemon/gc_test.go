@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1961,7 +1962,17 @@ func TestPruneWorktree_LegacyCacheFallbackSerializesWithCreateWorktree(t *testin
 	}
 	d.repoCache = blockingCache
 
+	var releaseOnce sync.Once
+	releaseGC := func() { releaseOnce.Do(func() { close(blockingCache.release) }) }
 	pruneDone := make(chan struct{})
+	t.Cleanup(func() {
+		releaseGC()
+		select {
+		case <-pruneDone:
+		case <-time.After(30 * time.Second):
+			t.Error("pruneWorktree did not finish during cleanup")
+		}
+	})
 	go func() {
 		d.pruneWorktree(barePath)
 		close(pruneDone)
@@ -1973,12 +1984,26 @@ func TestPruneWorktree_LegacyCacheFallbackSerializesWithCreateWorktree(t *testin
 		t.Fatal("timed out waiting for pruneWorktree to acquire repo lock")
 	}
 
+	// Real Git maintenance and checkout can take more than five seconds.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	workDir := t.TempDir()
 	createDone := make(chan error, 1)
+	createFinished := make(chan struct{})
+	t.Cleanup(func() {
+		cancel()
+		releaseGC()
+		select {
+		case <-createFinished:
+		case <-time.After(10 * time.Second):
+			t.Error("CreateWorktree did not stop during cleanup")
+		}
+	})
 	go func() {
-		_, err := blockingCache.CreateWorktree(repocache.WorktreeParams{
+		defer close(createFinished)
+		_, err := cache.CreateWorktreeContext(ctx, repocache.WorktreeParams{
 			WorkspaceID: "ws1",
 			RepoURL:     sourceRepo,
-			WorkDir:     t.TempDir(),
+			WorkDir:     workDir,
 			AgentName:   "tester",
 			TaskID:      "11111111-1111-1111-1111-111111111111",
 		})
@@ -1991,16 +2016,19 @@ func TestPruneWorktree_LegacyCacheFallbackSerializesWithCreateWorktree(t *testin
 	case <-time.After(200 * time.Millisecond):
 	}
 
-	close(blockingCache.release)
+	releasedAt := time.Now()
+	releaseGC()
 
 	select {
 	case err := <-createDone:
 		if err != nil {
 			t.Fatalf("CreateWorktree failed after GC lock released: %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-ctx.Done():
 		t.Fatal("timed out waiting for CreateWorktree after releasing GC lock")
 	}
+
+	t.Logf("checkout completed %s after releasing GC", time.Since(releasedAt))
 
 	select {
 	case <-pruneDone:

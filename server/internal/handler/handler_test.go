@@ -224,12 +224,15 @@ func setWorkspaceIssuePrefixForTest(t *testing.T, prefix string) {
 	})
 }
 
+// Refresh the shared fixture heartbeat so long package runs keep it claimable.
 func handlerTestRuntimeID(t *testing.T) string {
 	t.Helper()
 
 	var runtimeID string
 	dbfx.QueryRow(t,
-		`SELECT id FROM agent_runtime WHERE workspace_id = $1 ORDER BY created_at ASC LIMIT 1`,
+		`UPDATE agent_runtime SET last_seen_at = now()
+		 WHERE id = (SELECT id FROM agent_runtime WHERE workspace_id = $1 ORDER BY created_at ASC LIMIT 1)
+		 RETURNING id`,
 		testWorkspaceID,
 	).Scan(&runtimeID)
 
@@ -3748,5 +3751,24 @@ func TestUpsertSkillFileRejectsSkillMd(t *testing.T) {
 	}
 	if !strings.Contains(upsertRec.Body.String(), "SKILL.md is reserved") {
 		t.Fatalf("expected error message about reserved SKILL.md, got: %s", upsertRec.Body.String())
+	}
+}
+
+// A long package run must not make an otherwise ready fixture unclaimable.
+func TestClaimTask_FixtureRuntimeHeartbeatDoesNotExpire(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	runtimeID := handlerTestRuntimeID(t)
+	dbfx.Exec(t, `UPDATE agent_runtime SET last_seen_at = now() - make_interval(secs => $2) WHERE id = $1`, runtimeID, service.RuntimeClaimFreshnessSeconds+1)
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `UPDATE agent_runtime SET last_seen_at = now() WHERE id = $1`, runtimeID)
+	})
+	agentID := createHandlerTestAgent(t, "Long-lived fixture", []byte("[]"))
+	issueID := dbfx.Issue(t, "Claim after fixture heartbeat expires")
+	taskID := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "issue_id": issueID})
+	probe := claimOneTaskForRuntime(t, handlerTestRuntimeID(t), "")
+	if probe.Task.ID != taskID {
+		t.Fatalf("claimed task = %s, want %s", probe.Task.ID, taskID)
 	}
 }
