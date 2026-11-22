@@ -2654,6 +2654,37 @@ func runIssueCommentList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// Keep stdin-authored content and the exact validated bytes recoverable if
+// uploading or publication fails. Nothing is uploaded unless this succeeds.
+func prepareCommentRecovery(content string, pending []pendingAttachment) (dir string, err error) {
+	if len(pending) == 0 {
+		return "", nil
+	}
+	dir, err = os.MkdirTemp(".", ".multica-comment-recovery-")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err != nil {
+			_ = os.RemoveAll(dir)
+		}
+	}()
+	if err = os.WriteFile(filepath.Join(dir, "body.md"), []byte(content), 0600); err != nil {
+		return dir, err
+	}
+	attachmentsDir := filepath.Join(dir, "attachments")
+	if err = os.Mkdir(attachmentsDir, 0700); err != nil {
+		return dir, err
+	}
+	for i, att := range pending {
+		name := fmt.Sprintf("%03d-%s", i+1, filepath.Base(att.path))
+		if err = os.WriteFile(filepath.Join(attachmentsDir, name), att.data, 0600); err != nil {
+			return dir, err
+		}
+	}
+	return dir, nil
+}
+
 func runIssueCommentAdd(cmd *cobra.Command, args []string) error {
 	content, hasContent, err := resolveTextFlag(cmd, "content")
 	if err != nil {
@@ -2689,17 +2720,6 @@ func runIssueCommentAdd(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	issueRef, err := resolveIssueRef(ctx, client, args[0])
-	if err != nil {
-		return fmt.Errorf("resolve issue: %w", err)
-	}
-	issueID := issueRef.ID
-
-	steerTargets, err := resolveSteerTargets(ctx, client, issueID, steerInputs, steerActive)
-	if err != nil {
-		return err
-	}
-
 	// Validate and read ALL attachments before uploading any. URLs are skipped
 	// with a warning — `--attachment` only accepts local file paths. Reading
 	// everything up front means a later invalid path (external / symlink escape
@@ -2710,7 +2730,44 @@ func runIssueCommentAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	issueID := args[0]
 	var attachmentIDs []string
+	recoveryDir, err := prepareCommentRecovery(content, pending)
+	if err != nil {
+		return fmt.Errorf("save comment recovery before upload: %w", err)
+	}
+	published := false
+	defer func() {
+		if recoveryDir == "" {
+			return
+		}
+		if published {
+			if err := os.RemoveAll(recoveryDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Comment was published; could not remove recovery files %s: %v\n", recoveryDir, err)
+			}
+			return
+		}
+		parentID, _ := cmd.Flags().GetString("parent")
+		receipt, _ := json.MarshalIndent(map[string]any{
+			"issue_id": issueID, "parent_id": parentID, "attachment_ids": attachmentIDs,
+		}, "", "  ")
+		if err := os.WriteFile(filepath.Join(recoveryDir, "receipt.json"), append(receipt, '\n'), 0600); err != nil {
+			fmt.Fprintf(os.Stderr, "Could not save upload receipt (IDs: %v): %v\n", attachmentIDs, err)
+		}
+		fmt.Fprintf(os.Stderr, "Comment publication not confirmed. Body and files saved in %s.\n", recoveryDir)
+	}()
+
+	issueRef, err := resolveIssueRef(ctx, client, args[0])
+	if err != nil {
+		return fmt.Errorf("resolve issue: %w", err)
+	}
+	issueID = issueRef.ID
+
+	steerTargets, err := resolveSteerTargets(ctx, client, issueID, steerInputs, steerActive)
+	if err != nil {
+		return err
+	}
+
 	uploaded := make([]cli.AttachmentResponse, 0, len(pending))
 	for _, att := range pending {
 		// Comment attachments are linked by the comment request; upload them unbound first.
@@ -2720,7 +2777,7 @@ func runIssueCommentAdd(cmd *cobra.Command, args []string) error {
 		}
 		attachmentIDs = append(attachmentIDs, result.ID)
 		uploaded = append(uploaded, result)
-		fmt.Fprintf(os.Stderr, "Uploaded %s\n", att.path)
+		fmt.Fprintf(os.Stderr, "Uploaded %s; awaiting comment publication.\n", att.path)
 	}
 	content = applyAttachmentLinks(os.Stderr, content, "comment body", pending, uploaded)
 
@@ -2749,6 +2806,7 @@ func runIssueCommentAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("add comment: %w", err)
 	}
 
+	published = true
 	fmt.Fprintf(os.Stderr, "Comment added to issue %s.\n", issueRef.Display)
 	reportSteerOutcomes(os.Stderr, steerTargets, result)
 

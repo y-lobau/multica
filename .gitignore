@@ -55,6 +55,7 @@ apps/web/test-results/
 .context
 .agent_context/
 .multica/*
+.multica-comment-recovery-*/
 !.multica/environments.toml
 
 # local settings
