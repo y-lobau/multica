@@ -38,7 +38,8 @@ func TestPrepareIsolated_PermanentFIFOBlockThenImmediateRetry(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	// Allow helper startup before the FIFO forces the deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	startedAt := time.Now()
