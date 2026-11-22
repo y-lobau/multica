@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -829,38 +830,48 @@ func TestRouter_NoMediaMessageSkipsMediaPipeline(t *testing.T) {
 }
 
 func TestRouter_MediaResolverTimeoutAppendsOriginalMessage(t *testing.T) {
-	h := newHarness(t)
-	h.router = NewRouter(h.issues, h.tasks, h.reader, RouterConfig{MediaTimeout: 10 * time.Millisecond, Logger: discardLogger()})
-	h.media.waitForCancel = true
-	h.router.Register(channel.TypeFeishu, ResolverSet{
-		Installation: h.inst,
-		Identity:     h.ident,
-		Dedup:        h.dedup,
-		Session:      h.binder,
-		Audit:        h.audit,
-		Replier:      h.replier,
-		Typing:       h.typing,
-		Media:        h.media,
-		OriginType:   "lark_chat",
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness(t)
+		h.router = NewRouter(h.issues, h.tasks, h.reader, RouterConfig{MediaTimeout: 10 * time.Millisecond, Logger: discardLogger()})
+		h.media.waitForCancel = true
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if !h.router.Drain(ctx) {
+				t.Error("router did not drain after media timeout")
+			}
+		}()
+		h.router.Register(channel.TypeFeishu, ResolverSet{
+			Installation: h.inst,
+			Identity:     h.ident,
+			Dedup:        h.dedup,
+			Session:      h.binder,
+			Audit:        h.audit,
+			Replier:      h.replier,
+			Typing:       h.typing,
+			Media:        h.media,
+			OriginType:   "lark_chat",
+		})
+
+		if err := h.router.Handle(context.Background(), p2pMessage(t)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+		synctest.Wait()
+		if !waitFor(time.Second, func() bool { return h.media.calls() == 1 }) {
+			t.Fatalf("media resolver calls = %d, want 1", h.media.calls())
+		}
+		if refs := h.binder.boundMedia().MediaRefs; len(refs) != 0 {
+			t.Fatalf("timed-out media refs must not attach: %+v", refs)
+		}
+		if !waitFor(time.Second, h.tasks.wasCalled) {
+			t.Fatalf("message should still be ingested and trigger a chat run")
+		}
+		if h.dedup.releases() != 0 {
+			t.Fatalf("media timeout must not release a durably appended message, got %d", h.dedup.releases())
+		}
 	})
-
-	if err := h.router.Handle(context.Background(), p2pMessage(t)); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !waitFor(time.Second, func() bool { return h.media.calls() == 1 }) {
-		t.Fatalf("media resolver calls = %d, want 1", h.media.calls())
-	}
-	if refs := h.binder.boundMedia().MediaRefs; len(refs) != 0 {
-		t.Fatalf("timed-out media refs must not attach: %+v", refs)
-	}
-	if !waitFor(time.Second, h.tasks.wasCalled) {
-		t.Fatalf("message should still be ingested and trigger a chat run")
-	}
-	if h.dedup.releases() != 0 {
-		t.Fatalf("media timeout must not release a durably appended message, got %d", h.dedup.releases())
-	}
 }
-
 func TestRouter_MediaBindFailureStillChecksPlaceholderPromotion(t *testing.T) {
 	h := newHarness(t)
 	h.binder.bindErr = errors.New("attachment write failed")

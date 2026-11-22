@@ -22,6 +22,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -250,29 +251,31 @@ func (r *relaySendRig) stop() {
 // type error, and no existing test drives deliverRelayed's retry path at all.
 func TestRelayedReply_AFrameStillInFlightRecordsNoReplyOutcome(t *testing.T) {
 	t.Parallel()
-	rig := newRelaySendRig(t, func(int) bool { return true }) // the socket never takes anything
-	wantAttempts := len(relayRetryConfig.retryPlan()) + 1     // the first offer, then the chain
+	synctest.Test(t, func(t *testing.T) {
+		rig := newRelaySendRig(t, func(int) bool { return true }) // the socket never takes anything
+		wantAttempts := len(relayRetryConfig.retryPlan()) + 1     // the first offer, then the chain
 
-	rig.route(t, "答案")
-	waitFor(t, "the retry chain to run out", func() bool {
-		return rig.conn.writeAttempts() >= wantAttempts
+		rig.route(t, "答案")
+		waitFor(t, "the retry chain to run out", func() bool {
+			return rig.conn.writeAttempts() >= wantAttempts
+		})
+		rig.stop()
+
+		if got := rig.conn.writeAttempts(); got != wantAttempts {
+			t.Fatalf("delivery attempts = %d, want %d — the dispatcher's own chain", got, wantAttempts)
+		}
+		if got := rig.mx.get("outbound_dropped"); got != 0 {
+			t.Errorf("outbound_dropped = %d, want 0 — this reply was re-offered %d times and "+
+				"counting each one turns the drop counter into a retry counter; the publisher's "+
+				"watchOutcomes is the one owner that settles a routed reply, once", got, wantAttempts)
+		}
+		if got := rig.mx.get("outbound_unconfirmed"); got != 0 {
+			t.Errorf("outbound_unconfirmed = %d, want 0 — same rule, other counter", got)
+		}
+		if got := rig.mx.get("outbound_delivered"); got != 0 {
+			t.Errorf("outbound_delivered = %d, want 0 — nothing reached the chat", got)
+		}
 	})
-	rig.stop()
-
-	if got := rig.conn.writeAttempts(); got != wantAttempts {
-		t.Fatalf("delivery attempts = %d, want %d — the dispatcher's own chain", got, wantAttempts)
-	}
-	if got := rig.mx.get("outbound_dropped"); got != 0 {
-		t.Errorf("outbound_dropped = %d, want 0 — this reply was re-offered %d times and "+
-			"counting each one turns the drop counter into a retry counter; the publisher's "+
-			"watchOutcomes is the one owner that settles a routed reply, once", got, wantAttempts)
-	}
-	if got := rig.mx.get("outbound_unconfirmed"); got != 0 {
-		t.Errorf("outbound_unconfirmed = %d, want 0 — same rule, other counter", got)
-	}
-	if got := rig.mx.get("outbound_delivered"); got != 0 {
-		t.Errorf("outbound_delivered = %d, want 0 — nothing reached the chat", got)
-	}
 }
 
 // The other half of the same rule: a reply the chain eventually delivers is

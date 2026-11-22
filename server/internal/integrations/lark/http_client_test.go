@@ -287,10 +287,15 @@ func TestHTTPClient_DownloadMessageResourceUsesResourceTimeout(t *testing.T) {
 	})
 	c := NewHTTPAPIClient(HTTPClientConfig{
 		BaseURL:                 fake.URL(),
-		HTTPClient:              &http.Client{Timeout: 20 * time.Millisecond},
+		HTTPClient:              &http.Client{Timeout: time.Second},
 		ResourceDownloadTimeout: 500 * time.Millisecond,
 		Now:                     time.Now,
 	}).(*httpAPIClient)
+	// Token acquisition is setup; the short API timeout tests the resource path.
+	if _, err := c.tenantAccessToken(context.Background(), testCreds()); err != nil {
+		t.Fatalf("prepare tenant token: %v", err)
+	}
+	c.cfg.HTTPClient.Timeout = 20 * time.Millisecond
 	got, err := c.DownloadMessageResource(context.Background(), testCreds(), DownloadResourceParams{
 		MessageID: "om_video",
 		FileKey:   "file_video",
