@@ -142,7 +142,9 @@ func TestInboxRelay_NoReplicaHoldsTheActorsBotFallsBack(t *testing.T) {
 	pool := twoReplicaDB(t)
 	fx := seedInboxRelayFixture(t, pool)
 	relay, dedupe := &fanoutRelay{}, newSharedDedupe()
-	cfg := RelayConfig{AcceptanceWindow: 200 * time.Millisecond}
+	// A short poll budget may legitimately become uncertain before it can fence.
+	// Exercise the database-backed fallback with the production acceptance window.
+	cfg := RelayConfig{}
 
 	// This replica served the inbox event and holds NO socket; the other holds
 	// only the recipient-wide bot's socket, never the acting agent's.

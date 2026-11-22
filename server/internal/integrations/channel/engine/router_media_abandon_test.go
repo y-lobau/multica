@@ -20,6 +20,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -99,42 +100,51 @@ func registerMediaSet(h *harness, media MediaResolver) {
 // having observed no failure of its own; without this call nothing anywhere
 // tells the person who sent the attachment that it did not arrive.
 func TestRouter_MediaBudgetExpiredTellsAResolverThatCanSaySo(t *testing.T) {
-	h := newHarness(t)
-	h.router = NewRouter(h.issues, h.tasks, h.reader, RouterConfig{MediaTimeout: 10 * time.Millisecond, Logger: discardLogger()})
-	h.media.waitForCancel = true
-	media := &abandonAwareMedia{fakeMedia: h.media}
-	registerMediaSet(h, media)
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness(t)
+		h.router = NewRouter(h.issues, h.tasks, h.reader, RouterConfig{MediaTimeout: 10 * time.Millisecond, Logger: discardLogger()})
+		h.media.waitForCancel = true
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if !h.router.Drain(ctx) {
+				t.Error("router did not drain after media timeout")
+			}
+		}()
+		media := &abandonAwareMedia{fakeMedia: h.media}
+		registerMediaSet(h, media)
 
-	msg := p2pMessage(t)
-	if err := h.router.Handle(context.Background(), msg); err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
-	if !waitFor(2*time.Second, func() bool { n, _, _, _ := media.observed(); return n > 0 }) {
-		t.Fatal("the media budget expired, the refs were dropped, and the resolver was never told: " +
-			"nothing on this path can tell the sender their attachment did not arrive, " +
-			"so the bot answers the line they typed beside the picture as if there were no picture")
-	}
-	notes, liveCtx, inst, gotMsg := media.observed()
-	if notes != 1 {
-		t.Fatalf("the resolver was told %d times about one abandoned message; the sender reads one apology per notice", notes)
-	}
-	if !liveCtx {
-		t.Fatal("the notice was handed the context that had just expired — nothing can be written to the chat on it, " +
-			"so the sender is told nothing after all")
-	}
-	if !inst.ID.Valid {
-		t.Fatal("the notice carries no installation, so the resolver cannot work out which socket to write to")
-	}
-	if gotMsg.MessageID != msg.MessageID {
-		t.Fatalf("the notice carries message %q, want %q — the resolver needs the original message to find the chat and the attachments",
-			gotMsg.MessageID, msg.MessageID)
-	}
-	// The refs are still dropped and the run still proceeds on the
-	// placeholder. Telling the sender is an addition to that outcome, not a
-	// replacement for it.
-	if refs := h.binder.boundMedia().MediaRefs; len(refs) != 0 {
-		t.Fatalf("timed-out media refs must still not attach: %+v", refs)
-	}
+		msg := p2pMessage(t)
+		if err := h.router.Handle(context.Background(), msg); err != nil {
+			t.Fatalf("Handle: %v", err)
+		}
+		if !waitFor(2*time.Second, func() bool { n, _, _, _ := media.observed(); return n > 0 }) {
+			t.Fatal("the media budget expired, the refs were dropped, and the resolver was never told: " +
+				"nothing on this path can tell the sender their attachment did not arrive, " +
+				"so the bot answers the line they typed beside the picture as if there were no picture")
+		}
+		notes, liveCtx, inst, gotMsg := media.observed()
+		if notes != 1 {
+			t.Fatalf("the resolver was told %d times about one abandoned message; the sender reads one apology per notice", notes)
+		}
+		if !liveCtx {
+			t.Fatal("the notice was handed the context that had just expired — nothing can be written to the chat on it, " +
+				"so the sender is told nothing after all")
+		}
+		if !inst.ID.Valid {
+			t.Fatal("the notice carries no installation, so the resolver cannot work out which socket to write to")
+		}
+		if gotMsg.MessageID != msg.MessageID {
+			t.Fatalf("the notice carries message %q, want %q — the resolver needs the original message to find the chat and the attachments",
+				gotMsg.MessageID, msg.MessageID)
+		}
+		// The refs are still dropped and the run still proceeds on the
+		// placeholder. Telling the sender is an addition to that outcome, not a
+		// replacement for it.
+		if refs := h.binder.boundMedia().MediaRefs; len(refs) != 0 {
+			t.Fatalf("timed-out media refs must still not attach: %+v", refs)
+		}
+	})
 }
 
 // TestRouter_MediaBudgetExpiredLeavesAResolverThatCannotNotifyAlone is the
@@ -144,33 +154,42 @@ func TestRouter_MediaBudgetExpiredTellsAResolverThatCanSaySo(t *testing.T) {
 // it ended before: refs dropped, message still ingested, placeholder task
 // still promoted, no panic, no extra call to anything.
 func TestRouter_MediaBudgetExpiredLeavesAResolverThatCannotNotifyAlone(t *testing.T) {
-	h := newHarness(t)
-	h.router = NewRouter(h.issues, h.tasks, h.reader, RouterConfig{MediaTimeout: 10 * time.Millisecond, Logger: discardLogger()})
-	h.media.waitForCancel = true
-	// fakeMedia is the sibling shape: HasMedia + ResolveMedia and nothing else.
-	if _, ok := MediaResolver(h.media).(MediaAbandonNotifier); ok {
-		t.Fatal("this test is only a guard while the plain resolver does NOT implement the notifier")
-	}
-	registerMediaSet(h, h.media)
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness(t)
+		h.router = NewRouter(h.issues, h.tasks, h.reader, RouterConfig{MediaTimeout: 10 * time.Millisecond, Logger: discardLogger()})
+		h.media.waitForCancel = true
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if !h.router.Drain(ctx) {
+				t.Error("router did not drain after media timeout")
+			}
+		}()
+		// fakeMedia is the sibling shape: HasMedia + ResolveMedia and nothing else.
+		if _, ok := MediaResolver(h.media).(MediaAbandonNotifier); ok {
+			t.Fatal("this test is only a guard while the plain resolver does NOT implement the notifier")
+		}
+		registerMediaSet(h, h.media)
 
-	if err := h.router.Handle(context.Background(), p2pMessage(t)); err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
-	if !waitFor(2*time.Second, func() bool { return h.media.calls() == 1 }) {
-		t.Fatalf("media resolver calls = %d, want 1", h.media.calls())
-	}
-	if refs := h.binder.boundMedia().MediaRefs; len(refs) != 0 {
-		t.Fatalf("timed-out media refs must not attach: %+v", refs)
-	}
-	if !waitFor(2*time.Second, h.tasks.wasCalled) {
-		t.Fatal("a channel that cannot send a notice lost its chat run: the message must still be ingested")
-	}
-	if !waitFor(2*time.Second, func() bool { return h.tasks.promotionCalls() >= 1 }) {
-		t.Fatal("a channel that cannot send a notice lost its placeholder promotion")
-	}
-	if h.dedup.releases() != 0 {
-		t.Fatalf("media timeout must not release a durably appended message, got %d", h.dedup.releases())
-	}
+		if err := h.router.Handle(context.Background(), p2pMessage(t)); err != nil {
+			t.Fatalf("Handle: %v", err)
+		}
+		if !waitFor(2*time.Second, func() bool { return h.media.calls() == 1 }) {
+			t.Fatalf("media resolver calls = %d, want 1", h.media.calls())
+		}
+		if refs := h.binder.boundMedia().MediaRefs; len(refs) != 0 {
+			t.Fatalf("timed-out media refs must not attach: %+v", refs)
+		}
+		if !waitFor(2*time.Second, h.tasks.wasCalled) {
+			t.Fatal("a channel that cannot send a notice lost its chat run: the message must still be ingested")
+		}
+		if !waitFor(2*time.Second, func() bool { return h.tasks.promotionCalls() >= 1 }) {
+			t.Fatal("a channel that cannot send a notice lost its placeholder promotion")
+		}
+		if h.dedup.releases() != 0 {
+			t.Fatalf("media timeout must not release a durably appended message, got %d", h.dedup.releases())
+		}
+	})
 }
 
 // TestRouter_AnAbandonNoticeThatNeverReturnsDoesNotHoldUpFinalization is the
@@ -183,51 +202,61 @@ func TestRouter_MediaBudgetExpiredLeavesAResolverThatCannotNotifyAlone(t *testin
 // REVERSE VERIFICATION: call NotifyMediaAbandoned inline on finalizeCtx, as
 // before, and the bind and promotion never happen while the notice is stuck.
 func TestRouter_AnAbandonNoticeThatNeverReturnsDoesNotHoldUpFinalization(t *testing.T) {
-	h := newHarness(t)
-	h.router = NewRouter(h.issues, h.tasks, h.reader, RouterConfig{MediaTimeout: 10 * time.Millisecond, Logger: discardLogger()})
-	h.media.waitForCancel = true
-	stuck := make(chan struct{})
-	var unstick sync.Once
-	t.Cleanup(func() { unstick.Do(func() { close(stuck) }) })
-	media := &abandonAwareMedia{fakeMedia: h.media, block: stuck}
-	registerMediaSet(h, media)
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness(t)
+		h.router = NewRouter(h.issues, h.tasks, h.reader, RouterConfig{MediaTimeout: 10 * time.Millisecond, Logger: discardLogger()})
+		h.media.waitForCancel = true
+		stuck := make(chan struct{})
+		var unstick sync.Once
+		defer func() {
+			unstick.Do(func() { close(stuck) })
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if !h.router.Drain(ctx) {
+				t.Error("router did not drain after unblocking the notice")
+			}
+		}()
+		t.Cleanup(func() { unstick.Do(func() { close(stuck) }) })
+		media := &abandonAwareMedia{fakeMedia: h.media, block: stuck}
+		registerMediaSet(h, media)
 
-	asked := time.Now()
-	if err := h.router.Handle(context.Background(), p2pMessage(t)); err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
-	if !waitFor(2*time.Second, func() bool { n, _, _, _ := media.observed(); return n > 0 }) {
-		t.Fatal("the resolver was never told the budget ran out")
-	}
-	if !waitFor(2*time.Second, func() bool { return h.binder.boundMedia().MessageID.Valid }) {
-		t.Fatal("the message was never bound while the notice was stuck: its pending-media marker stays set " +
-			"and every later message in the session waits on it")
-	}
-	if !waitFor(2*time.Second, func() bool { return h.tasks.promotionCalls() >= 1 }) {
-		t.Fatal("the task was never promoted while the notice was stuck: the agent does not run until recovery finds it")
-	}
+		asked := time.Now()
+		if err := h.router.Handle(context.Background(), p2pMessage(t)); err != nil {
+			t.Fatalf("Handle: %v", err)
+		}
+		if !waitFor(2*time.Second, func() bool { n, _, _, _ := media.observed(); return n > 0 }) {
+			t.Fatal("the resolver was never told the budget ran out")
+		}
+		if !waitFor(2*time.Second, func() bool { return h.binder.boundMedia().MessageID.Valid }) {
+			t.Fatal("the message was never bound while the notice was stuck: its pending-media marker stays set " +
+				"and every later message in the session waits on it")
+		}
+		if !waitFor(2*time.Second, func() bool { return h.tasks.promotionCalls() >= 1 }) {
+			t.Fatal("the task was never promoted while the notice was stuck: the agent does not run until recovery finds it")
+		}
 
-	media.noteMu.Lock()
-	hasDeadline, deadline := media.hasDeadline, media.deadline
-	media.noteMu.Unlock()
-	if !hasDeadline {
-		t.Fatal("the notice was handed a context with no deadline: a chat that never answers holds its goroutine forever")
-	}
-	if limit := asked.Add(mediaAbandonNoticeTimeout + time.Second); deadline.After(limit) {
-		t.Fatalf("the notice's deadline %s is past the %s bound", deadline.Sub(asked), mediaAbandonNoticeTimeout)
-	}
+		media.noteMu.Lock()
+		hasDeadline, deadline := media.hasDeadline, media.deadline
+		media.noteMu.Unlock()
+		if !hasDeadline {
+			t.Fatal("the notice was handed a context with no deadline: a chat that never answers holds its goroutine forever")
+		}
+		if limit := asked.Add(mediaAbandonNoticeTimeout + time.Second); deadline.After(limit) {
+			t.Fatalf("the notice's deadline %s is past the %s bound", deadline.Sub(asked), mediaAbandonNoticeTimeout)
+		}
 
-	// Drain counts the notice as media work in flight: it reports the stuck
-	// one, and finishes once it returns.
-	shortCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	if h.router.Drain(shortCtx) {
-		t.Fatal("Drain reported everything finished while the abandon notice was still running")
-	}
-	unstick.Do(func() { close(stuck) })
-	if !h.router.Drain(context.Background()) {
-		t.Fatal("Drain did not finish after the notice returned")
-	}
+		// Drain counts the notice as media work in flight: it reports the stuck
+		// one, and finishes once it returns.
+		shortCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		if h.router.Drain(shortCtx) {
+			t.Fatal("Drain reported everything finished while the abandon notice was still running")
+		}
+		unstick.Do(func() { close(stuck) })
+		if !h.router.Drain(context.Background()) {
+			t.Fatal("Drain did not finish after the notice returned")
+		}
+	})
 }
 
 // TestRouter_TellsTheResolverWhatItDroppedAndWhetherItRan carries the two
@@ -242,35 +271,44 @@ func TestRouter_AnAbandonNoticeThatNeverReturnsDoesNotHoldUpFinalization(t *test
 // fields, so it pins the Router not to report a run that did not happen.)
 func TestRouter_TellsTheResolverWhatItDroppedAndWhetherItRan(t *testing.T) {
 	t.Run("cut off after one ref landed", func(t *testing.T) {
-		h := newHarness(t)
-		h.router = NewRouter(h.issues, h.tasks, h.reader, RouterConfig{MediaTimeout: 20 * time.Millisecond, Logger: discardLogger()})
-		h.media.resolve = func(ctx context.Context, msg channel.InboundMessage) channel.InboundMessage {
-			msg.MediaRefs = append(msg.MediaRefs, channel.MediaRef{Type: channel.MsgTypeImage, StorageKey: "landed-in-time"})
-			<-ctx.Done()
-			return msg
-		}
-		media := &abandonAwareMedia{fakeMedia: h.media}
-		registerMediaSet(h, media)
+		synctest.Test(t, func(t *testing.T) {
+			h := newHarness(t)
+			h.router = NewRouter(h.issues, h.tasks, h.reader, RouterConfig{MediaTimeout: 20 * time.Millisecond, Logger: discardLogger()})
+			defer func() {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				if !h.router.Drain(ctx) {
+					t.Error("router did not drain after media timeout")
+				}
+			}()
+			h.media.resolve = func(ctx context.Context, msg channel.InboundMessage) channel.InboundMessage {
+				msg.MediaRefs = append(msg.MediaRefs, channel.MediaRef{Type: channel.MsgTypeImage, StorageKey: "landed-in-time"})
+				<-ctx.Done()
+				return msg
+			}
+			media := &abandonAwareMedia{fakeMedia: h.media}
+			registerMediaSet(h, media)
 
-		if err := h.router.Handle(context.Background(), p2pMessage(t)); err != nil {
-			t.Fatalf("Handle: %v", err)
-		}
-		if !waitFor(2*time.Second, func() bool { n, _, _, _ := media.observed(); return n > 0 }) {
-			t.Fatal("the resolver was never told the budget ran out")
-		}
-		a := media.abandonment()
-		if !a.Started {
-			t.Error("Started = false, but ResolveMedia ran: the resolver would count again what it already counted")
-		}
-		if len(a.Dropped) != 1 || a.Dropped[0].StorageKey != "landed-in-time" {
-			t.Errorf("Dropped = %+v, want the one ref ResolveMedia returned", a.Dropped)
-		}
-		if !errors.Is(a.Cause, context.DeadlineExceeded) {
-			t.Errorf("Cause = %v, want context.DeadlineExceeded", a.Cause)
-		}
-		if refs := h.binder.boundMedia().MediaRefs; len(refs) != 0 {
-			t.Fatalf("the dropped ref was bound anyway: %+v", refs)
-		}
+			if err := h.router.Handle(context.Background(), p2pMessage(t)); err != nil {
+				t.Fatalf("Handle: %v", err)
+			}
+			if !waitFor(2*time.Second, func() bool { n, _, _, _ := media.observed(); return n > 0 }) {
+				t.Fatal("the resolver was never told the budget ran out")
+			}
+			a := media.abandonment()
+			if !a.Started {
+				t.Error("Started = false, but ResolveMedia ran: the resolver would count again what it already counted")
+			}
+			if len(a.Dropped) != 1 || a.Dropped[0].StorageKey != "landed-in-time" {
+				t.Errorf("Dropped = %+v, want the one ref ResolveMedia returned", a.Dropped)
+			}
+			if !errors.Is(a.Cause, context.DeadlineExceeded) {
+				t.Errorf("Cause = %v, want context.DeadlineExceeded", a.Cause)
+			}
+			if refs := h.binder.boundMedia().MediaRefs; len(refs) != 0 {
+				t.Fatalf("the dropped ref was bound anyway: %+v", refs)
+			}
+		})
 	})
 
 	t.Run("never started", func(t *testing.T) {
