@@ -967,13 +967,14 @@ func TestPiExecuteFailsOnScannerOverflow(t *testing.T) {
 	// line most likely to outgrow the shared bound. Once the scanner stops, the
 	// run's terminal state is unknown and must not read as success. The line is
 	// sized from agentStreamMaxLineBytes so raising the cap keeps this test on
-	// the overflow branch.
+	// the overflow branch. Raw NULs exceed the same line cap without a slow tr
+	// producer consuming the execution budget before the scanner sees overflow.
 	script := piEventStreamScript([]string{
 		`{"type":"agent_start"}`,
 		`{"type":"turn_start"}`,
 		`{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"done"}}`,
 		`{"type":"turn_end","message":{"role":"assistant","model":"test","usage":{"input":1,"output":1}}}`,
-	}) + fmt.Sprintf("dd if=/dev/zero bs=1048576 count=%d 2>/dev/null | tr '\\000' x\nprintf '\\n'\n",
+	}) + fmt.Sprintf("dd if=/dev/zero bs=1048576 count=%d 2>/dev/null\nprintf '\\n'\n",
 		agentStreamMaxLineBytes/(1024*1024)+1)
 	backend := newPiTestBackend(t, script, 0)
 	// A generous timeout: without the fix this run hangs until it expires, and
