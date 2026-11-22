@@ -228,9 +228,10 @@ func TestCursorExecuteReportsScannerOverflow(t *testing.T) {
 	// The oversized event is sized from agentStreamMaxLineBytes so raising
 	// the shared cap cannot silently turn this into a plain oversized-line
 	// pass that never reaches the overflow branch.
+	// NUL bytes are non-newline bytes too; avoid a slow external tr producer.
 	script := fmt.Sprintf(`#!/bin/sh
 printf '%%s\n' '{"type":"system","subtype":"init","session_id":"sess-overflow"}'
-dd if=/dev/zero bs=1048576 count=%d 2>/dev/null | tr '\000' x
+dd if=/dev/zero bs=1048576 count=%d 2>/dev/null
 printf '\n'
 `, agentStreamMaxLineBytes/(1024*1024)+1)
 	result := executeFakeCursor(t, script)

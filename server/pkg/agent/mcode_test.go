@@ -17,75 +17,15 @@ import (
 func writeFakeMcodeACP(t *testing.T, loadSession bool) (string, string, string) {
 	t.Helper()
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "mcode")
-	requests := filepath.Join(dir, "requests.jsonl")
-	args := filepath.Join(dir, "args.txt")
-	script := fmt.Sprintf(`#!/bin/sh
-printf '%%s\n' "$*" > %q
-while IFS= read -r line; do
-  printf '%%s\n' "$line" >> %q
-  id=$(printf '%%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*)
-      printf '{"jsonrpc":"2.0","id":%%s,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":%t,"mcpCapabilities":{"http":true,"sse":true}}}}\n' "$id"
-      ;;
-    *'"method":"session/new"'*)
-      printf '{"jsonrpc":"2.0","id":%%s,"result":{"sessionId":"mcode-session-new"}}\n' "$id"
-      ;;
-    *'"method":"session/load"'*)
-      printf '{"jsonrpc":"2.0","id":%%s,"result":{}}\n' "$id"
-      ;;
-    *'"method":"session/prompt"'*)
-      printf '{"jsonrpc":"2.0","id":%%s,"result":{"stopReason":"end_turn"}}\n' "$id"
-      sleep 0.05
-      printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"mcode-session-new","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"MCode completed the task"}}}}\n'
-      ;;
-    *)
-      printf '{"jsonrpc":"2.0","id":%%s,"error":{"code":-32601,"message":"method not found"}}\n' "$id"
-      ;;
-  esac
-done
-`, args, requests, loadSession)
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake mcode: %v", err)
-	}
+	requests, args := filepath.Join(dir, "requests.jsonl"), filepath.Join(dir, "args.txt")
+	bin := writeTimedFixture(t, "mcode", timedFixture{ACP: true, SessionID: "mcode-session-new", Text: "MCode completed the task", LoadSession: loadSession, Requests: requests, Args: args})
 	return bin, requests, args
 }
 
 func writeFakeMcodeACPReadyAfterInitialize(t *testing.T, readyAfter time.Duration) (string, string) {
 	t.Helper()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "mcode")
-	requests := filepath.Join(dir, "requests.jsonl")
-	ready := filepath.Join(dir, "ready")
-	script := fmt.Sprintf(`#!/bin/sh
-while IFS= read -r line; do
-  printf '%%s\n' "$line" >> %q
-  id=$(printf '%%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*)
-      printf '{"jsonrpc":"2.0","id":%%s,"result":{"protocolVersion":1,"agentCapabilities":{}}}\n' "$id"
-      ( sleep %.3f; : > %q ) &
-      ;;
-    *'"method":"session/new"'*)
-      if [ ! -f %q ]; then
-        exit 42
-      fi
-      printf '{"jsonrpc":"2.0","id":%%s,"result":{"sessionId":"mcode-ready-session"}}\n' "$id"
-      ;;
-    *'"method":"session/prompt"'*)
-      printf '{"jsonrpc":"2.0","id":%%s,"result":{"stopReason":"end_turn"}}\n' "$id"
-      printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"mcode-ready-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"ready"}}}}\n'
-      ;;
-    *)
-      printf '{"jsonrpc":"2.0","id":%%s,"error":{"code":-32601,"message":"method not found"}}\n' "$id"
-      ;;
-  esac
-done
-`, requests, readyAfter.Seconds(), ready, ready)
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake mcode: %v", err)
-	}
+	requests := filepath.Join(t.TempDir(), "requests.jsonl")
+	bin := writeTimedFixture(t, "mcode", timedFixture{ACP: true, SessionID: "mcode-ready-session", Text: "ready", ReadyAfter: readyAfter, Requests: requests})
 	return bin, requests
 }
 

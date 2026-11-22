@@ -1329,13 +1329,10 @@ func TestKiroFreshOversizedHistoryImageDoesNotSignalResumeRejected(t *testing.T)
 func TestKiroDrainsNotificationsAfterPromptResponse(t *testing.T) {
 	t.Parallel()
 
-	fakePath := filepath.Join(t.TempDir(), "kiro-cli")
-	writeTestExecutable(t, fakePath, []byte(fakeKiroACPScript()))
-
+	fakePath := writeTimedFixture(t, "kiro", timedFixture{ACP: true, SessionID: "ses_fake", Text: "loaded", Tail: " tail"})
 	backend, err := New("kiro", Config{
 		ExecutablePath: fakePath,
 		Logger:         slog.Default(),
-		Env:            map[string]string{"KIRO_LATE_CHUNK": "1"},
 	})
 	if err != nil {
 		t.Fatalf("new kiro backend: %v", err)

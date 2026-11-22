@@ -880,12 +880,10 @@ func TestGrokUsesAdvertisedAPIKeyMethod(t *testing.T) {
 }
 
 func TestGrokDrainsNotificationsAfterPromptResponse(t *testing.T) {
-	fakePath := filepath.Join(t.TempDir(), "grok")
-	writeTestExecutable(t, fakePath, []byte(fakeGrokACPScript()))
+	fakePath := writeTimedFixture(t, "grok", timedFixture{ACP: true, Auth: true, SessionID: "ses_fake", Text: "pong", Tail: " tail"})
 	backend, err := New("grok", Config{
 		ExecutablePath: fakePath,
 		Logger:         slog.Default(),
-		Env:            map[string]string{"GROK_LATE_CHUNK": "1"},
 	})
 	if err != nil {
 		t.Fatalf("new grok backend: %v", err)

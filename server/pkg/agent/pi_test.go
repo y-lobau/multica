@@ -574,7 +574,8 @@ func TestPiExecuteTurnErrorActivityAndRetryRecoveryCancelTimer(t *testing.T) {
 		`printf '%s\n' '{"type":"turn_start"}'` + "\n" +
 		`printf '%s\n' '{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"recovered"}}'` + "\n" +
 		`printf '%s\n' '{"type":"turn_end","message":{"role":"assistant","model":"test"}}'` + "\n"
-	backend := newPiTestBackend(t, script, grace)
+	fakePath := writeTimedStreamFixture(t, "pi", script)
+	backend := &piBackend{cfg: Config{ExecutablePath: fakePath, Logger: slog.Default()}, turnErrorGrace: grace}
 
 	session, err := backend.Execute(context.Background(), "prompt-ignored", ExecOptions{
 		Timeout:         15 * time.Second,

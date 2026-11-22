@@ -4170,7 +4170,7 @@ func TestCodexInterruptCompletesNearConfiguredDeadline(t *testing.T) {
 	}
 
 	marker := filepath.Join(t.TempDir(), "turn-started")
-	fakePath := writeFakeCodexAppServer(t, ""+
+	fakePath := writeTimedStreamFixture(t, "codex", ""+
 		`read line`+"\n"+
 		`echo '{"jsonrpc":"2.0","id":1,"result":{}}'`+"\n"+
 		`read line`+"\n"+
@@ -4247,7 +4247,7 @@ func TestCodexExecuteLegacyFirstTurnMessageSatisfiesProgress(t *testing.T) {
 		t.Skip("shell-script fixture is POSIX-only")
 	}
 
-	fakePath := writeFakeCodexAppServer(t, ""+
+	fakePath := writeTimedStreamFixture(t, "codex", ""+
 		`read line`+"\n"+
 		`echo '{"jsonrpc":"2.0","id":1,"result":{}}'`+"\n"+
 		`read line`+"\n"+
@@ -4279,7 +4279,7 @@ func TestCodexExecuteSemanticInactivityAllowsContinuousMessages(t *testing.T) {
 		t.Skip("shell-script fixture is POSIX-only")
 	}
 
-	fakePath := writeFakeCodexAppServer(t, ""+
+	fakePath := writeTimedStreamFixture(t, "codex", ""+
 		`read line`+"\n"+
 		`echo '{"jsonrpc":"2.0","id":1,"result":{}}'`+"\n"+
 		`read line`+"\n"+
@@ -4313,7 +4313,7 @@ func TestCodexExecuteSemanticInactivityAllowsContinuousDeltaProgress(t *testing.
 		t.Skip("shell-script fixture is POSIX-only")
 	}
 
-	fakePath := writeFakeCodexAppServer(t, ""+
+	fakePath := writeTimedStreamFixture(t, "codex", ""+
 		`read line`+"\n"+
 		`echo '{"jsonrpc":"2.0","id":1,"result":{}}'`+"\n"+
 		`read line`+"\n"+
